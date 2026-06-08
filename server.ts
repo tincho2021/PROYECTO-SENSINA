@@ -135,6 +135,39 @@ async function startServer() {
     });
   });
 
+  // GET /api/fleet
+  // Exposes authorized active drivers and vehicles list for the ESP32 controller
+  app.get('/api/fleet', (req, res) => {
+    // We clean active entities to send only essential fields for Arduino JSON optimization
+    const activeDrivers = db.drivers
+      .filter(d => d.active)
+      .map(d => ({
+        id: d.id,
+        name: d.name,
+        rfid_card: d.rfidCard,
+        enabled_vehicles: d.enabledVehicles,
+        daily_limit_liters: d.dailyLimitLiters
+      }));
+
+    const activeVehicles = db.vehicles
+      .filter(v => v.active)
+      .map(v => ({
+        id: v.id,
+        plate: v.plate,
+        brand: v.brand,
+        model: v.model,
+        tank_capacity_liters: v.tankCapacityLiters
+      }));
+
+    res.json({
+      ok: true,
+      count_drivers: activeDrivers.length,
+      count_vehicles: activeVehicles.length,
+      drivers: activeDrivers,
+      vehicles: activeVehicles
+    });
+  });
+
   // 1. ESP32 Telemetry Endpoint
   // POST /api/telemetry
   app.post('/api/telemetry', validateDeviceToken, (req, res) => {
