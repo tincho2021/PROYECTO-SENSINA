@@ -405,6 +405,108 @@ async function startServer() {
         if (d.nozzle || d.hose_id) dbDisp.hose = Number(d.nozzle || d.hose_id);
         dbDisp.lastUpdated = new Date().toISOString();
       }
+
+      // Automatically register a fuel transaction from this dispenser status if completed sale exists
+      if (d.last_sale_liters && Number(d.last_sale_liters) > 0) {
+        let resolvedProdId = d.product_id || 'GO2';
+        if (resolvedProdId === 'GO3' || resolvedProdId === 'premium') {
+          resolvedProdId = 'GP';
+        } else if (resolvedProdId === 'nafta') {
+          resolvedProdId = 'NS';
+        } else if (resolvedProdId === 'gasoil') {
+          resolvedProdId = 'GO2';
+        }
+        if (!d.product_id || d.product_id === 'GO2') {
+          if (d.suction_tank_id === 'tank_01' || (d.product && d.product.toLowerCase().includes('premium'))) {
+            resolvedProdId = 'GP';
+          } else if (d.suction_tank_id === 'tank_03' || (d.product && d.product.toLowerCase().includes('super'))) {
+            resolvedProdId = 'NS';
+          }
+        }
+
+        const txId = d.last_transaction_id || `TX-AUTO-${d.dispenser_id}-${Math.round(d.last_sale_liters * 105)}-${new Date().toISOString().split('T')[0]}`;
+        const hasTx = db.transactions.some(tx => tx.id === txId);
+        const hasDupe = db.transactions.some(tx => 
+          tx.dispenserId === d.dispenser_id && 
+          Number(tx.liters) === Number(d.last_sale_liters) && 
+          Math.abs(new Date(tx.createdAt || tx.timestampEnd || Date.now()).getTime() - Date.now()) < 45000
+        );
+
+        if (!hasTx && !hasDupe) {
+          const newTx = {
+            id: txId,
+            siteId: (req as any).device?.siteId || "rosario-01",
+            dispenserId: d.dispenser_id,
+            hose: Number(d.nozzle || d.hose_id || 1),
+            productId: resolvedProdId,
+            liters: Number(d.last_sale_liters),
+            amount: Number(d.last_sale_amount || d.last_sale_liters * 1200),
+            pricePerLiter: d.last_sale_amount ? Number((d.last_sale_amount / d.last_sale_liters).toFixed(2)) : 1200,
+            driverId: d.driver ? "DRV-AUTO" : undefined,
+            vehicleId: d.vehicle ? "VEH-AUTO" : undefined,
+            vehiclePlate: d.plate || "SIN-PAT",
+            odometer: d.odometer || 0,
+            timestampStart: new Date(Date.now() - 3 * 60000).toISOString(),
+            timestampEnd: new Date().toISOString(),
+            authorizationMethod: d.authorization_method || 'RFID',
+            status: 'completed' as const,
+            createdAt: new Date().toISOString()
+          };
+
+          db.transactions.unshift(newTx);
+
+          // Reduce tank volume
+          const tank = db.tanks.find(t => t.productId === resolvedProdId && t.siteId === newTx.siteId);
+          if (tank) {
+            tank.currentVolumeLiters = Math.max(0, tank.currentVolumeLiters - newTx.liters);
+            tank.currentHeightMm = Math.round((tank.currentVolumeLiters / tank.capacityLiters) * tank.heightMm);
+            tank.lastUpdated = new Date().toISOString();
+          }
+
+          // Add to audit logs
+          db.auditLogs.unshift({
+            id: `AUD-${Date.now()}`,
+            userId: 'device-esp32-controller',
+            username: (req as any).device?.deviceId || "ESP32",
+            action: 'Transacción Auto-Sincronizada',
+            details: `${d.dispenser_id} entregó ${newTx.liters} L de ${resolvedProdId} (Auto-reporte)`,
+            timestamp: new Date().toISOString()
+          });
+
+          // Add to latestFuelTransactionsData
+          const txPayload = {
+            device_id: (req as any).device?.deviceId || "CTRL-SURT-0001",
+            site_id: (req as any).device?.siteId || "ESTACION-001",
+            transaction_id: newTx.id,
+            timestamp_start: newTx.timestampStart,
+            timestamp_end: newTx.timestampEnd,
+            dispenser_id: newTx.dispenserId,
+            hose_id: `M0${newTx.hose}`,
+            nozzle: newTx.hose,
+            product: (() => {
+              const associatedProd = db.products.find(p => p.id === resolvedProdId);
+              return associatedProd ? associatedProd.name.split(' (')[0] : (resolvedProdId === 'GO2' ? 'Gasoil Grado 2' : resolvedProdId === 'GP' ? 'Gasoil Grado 3' : 'Nafta Súper');
+            })(),
+            product_id: resolvedProdId,
+            liters: newTx.liters,
+            amount: newTx.amount,
+            price_per_liter: newTx.pricePerLiter,
+            driver_id: newTx.driverId || "DRV-001",
+            driver_name: d.driver || "C.E.S.T.I. Chofer",
+            vehicle_id: newTx.vehicleId || "VEH-001",
+            vehicle_plate: newTx.vehiclePlate,
+            odometer: newTx.odometer,
+            authorization_method: newTx.authorizationMethod,
+            authorization_id: "RFID-AUTO",
+            status: "completed" as const,
+            received_at: new Date().toISOString(),
+            event_type: "fuel_transaction" as const
+          };
+
+          latestFuelTransactionsData.unshift(txPayload);
+          latestFuelTransactionsData = latestFuelTransactionsData.slice(0, 50);
+        }
+      }
     }
 
     latestDispenserStatusData = {

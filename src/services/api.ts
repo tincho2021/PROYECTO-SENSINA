@@ -63,11 +63,85 @@ export async function fetchAllData() {
     const res = await fetch('/api/all-data');
     if (!res.ok) throw new Error('Failed to fetch from live backend server');
     const data = await res.json();
-    // Synchronize local fallback variables
+    
+    // Merge latest-fuel-transactions to make sure live dispatches are kept
+    try {
+      const txRes = await fetch('/api/latest-fuel-transactions');
+      if (txRes.ok) {
+        const txData = await txRes.json();
+        if (txData && txData.ok && Array.isArray(txData.data)) {
+          const freshTx = txData.data.map((newTx: any) => ({
+            id: newTx.transaction_id,
+            siteId: newTx.site_id || "rosario-01",
+            dispenserId: newTx.dispenser_id,
+            hose: newTx.nozzle || 1,
+            productId: newTx.product_id,
+            liters: Number(newTx.liters),
+            amount: Number(newTx.amount),
+            pricePerLiter: Number(newTx.price_per_liter || 1200),
+            driverId: newTx.driver_id,
+            vehicleId: newTx.vehicle_id,
+            vehiclePlate: newTx.vehicle_plate,
+            odometer: newTx.odometer,
+            timestampStart: newTx.timestamp_start,
+            timestampEnd: newTx.timestamp_end,
+            authorizationMethod: newTx.authorization_method || "RFID",
+            status: newTx.status || "completed",
+            createdAt: newTx.received_at || new Date().toISOString(),
+            isLiveIot: true
+          }));
+          
+          const mergedTx = [...freshTx];
+          (data.transactions || []).forEach((tx: any) => {
+            if (!mergedTx.some((mTx: any) => mTx.id === tx.id)) {
+              mergedTx.push(tx);
+            }
+          });
+          data.transactions = mergedTx;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to merge latest fuel transactions during fetchAllData", e);
+    }
+
     clientDb = data;
     return clientDb;
   } catch (error) {
     console.warn('[SENSINA API] Backend server offline or starting up, using local state.', error);
+    
+    // In Netlify or offline, retrieve latest transactions as well
+    try {
+      const txRes = await fetch('https://velvety-vacherin-c43b91.netlify.app/api/latest-fuel-transactions');
+      if (txRes.ok) {
+        const txData = await txRes.json();
+        if (txData && txData.ok && Array.isArray(txData.data)) {
+          const freshTx = txData.data.map((newTx: any) => ({
+            id: newTx.transaction_id,
+            siteId: newTx.site_id || "rosario-01",
+            dispenserId: newTx.dispenser_id,
+            hose: newTx.nozzle || 1,
+            productId: newTx.product_id,
+            liters: Number(newTx.liters),
+            amount: Number(newTx.amount),
+            pricePerLiter: Number(newTx.price_per_liter || 1200),
+            driverId: newTx.driver_id,
+            vehicleId: newTx.vehicle_id,
+            vehiclePlate: newTx.vehicle_plate,
+            odometer: newTx.odometer,
+            timestampStart: newTx.timestamp_start,
+            timestampEnd: newTx.timestamp_end,
+            authorizationMethod: newTx.authorization_method || "RFID",
+            status: newTx.status || "completed",
+            createdAt: newTx.received_at || new Date().toISOString(),
+            isLiveIot: true
+          }));
+          clientDb.transactions = freshTx;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed fallback fetch of latest fuel transactions", e);
+    }
+    
     return clientDb;
   }
 }
