@@ -128,8 +128,17 @@ exports.handler = async (event, context) => {
   } else {
     // Merge latest global.latestTanksMap items if they exist to keep them up to date across cold restarts
     if (global.latestTanksMap) {
+      const aliases = {
+        'tank_01': 'TQ-02', 'tank_1': 'TQ-02', 'TQ-02': 'tank_01',
+        'tank_02': 'TQ-01', 'tank_2': 'TQ-01', 'TQ-01': 'tank_02',
+        'tank_03': 'TQ-03', 'tank_3': 'TQ-03', 'TQ-03': 'tank_03'
+      };
       Object.entries(global.latestTanksMap).forEach(([tId, record]) => {
-        const idx = registeredTanks.findIndex(t => (t.tank_id || t.id) === tId);
+        const targetAlias = aliases[tId];
+        const idx = registeredTanks.findIndex(t => {
+          const tid = t.tank_id || t.id;
+          return tid === tId || (targetAlias && tid === targetAlias);
+        });
         if (idx > -1) {
           registeredTanks[idx] = { ...registeredTanks[idx], ...record };
         } else {
@@ -142,7 +151,7 @@ exports.handler = async (event, context) => {
   // --- SEGURIDAD MULTI-CISTERNA SÍNCRONA (ANTI RACE CONDITION) ---
   // Para evitar sobreescrituras por condiciones de carrera entre llamadas POST concurrentes
   // del microcontrolador o simulador, leemos las telemetrías individuales de cada cisterna en paralelo.
-  const knownTankIds = ['tank_01', 'tank_02', 'tank_03'];
+  const knownTankIds = ['tank_01', 'tank_02', 'tank_03', 'TQ-01', 'TQ-02', 'TQ-03'];
   const upToDateTanks = {};
 
   // 1) Cargar del mapa local en memoria si existe
@@ -190,16 +199,34 @@ exports.handler = async (event, context) => {
     console.warn("[C.E.S.T.I.] Falló consulta a KVDB para telemetrías individuales:", err.message);
   }
 
-  // 4) Fusionar de forma destructiva sobre registeredTanks usando la telemetría individual más fresca
+  // 4) Fusionar de forma destructiva sobre registeredTanks usando la telemetría individual más fresca, considerando alias
   if (registeredTanks && Array.isArray(registeredTanks)) {
+    const aliases = {
+      'tank_01': 'TQ-02', 'tank_1': 'TQ-02', 'TQ-02': 'tank_01',
+      'tank_02': 'TQ-01', 'tank_2': 'TQ-01', 'TQ-01': 'tank_02',
+      'tank_03': 'TQ-03', 'tank_3': 'TQ-03', 'TQ-03': 'tank_03'
+    };
+
     registeredTanks = registeredTanks.map(t => {
-      const match = upToDateTanks[t.tank_id || t.id];
-      return match ? { ...t, ...match } : t;
+      const primaryKey = t.tank_id || t.id;
+      const secondaryKey = aliases[primaryKey];
+
+      let match = upToDateTanks[primaryKey];
+      if (secondaryKey && upToDateTanks[secondaryKey]) {
+        if (!match || (upToDateTanks[secondaryKey].received_at && new Date(upToDateTanks[secondaryKey].received_at) > new Date(match.received_at))) {
+          match = upToDateTanks[secondaryKey];
+        }
+      }
+      return match ? { ...t, ...match, tank_id: primaryKey } : t;
     });
     
     // Si hay algún tanque en upToDateTanks que no esté en registeredTanks, lo agregamos
     Object.entries(upToDateTanks).forEach(([tId, record]) => {
-      const exists = registeredTanks.some(t => (t.tank_id || t.id) === tId);
+      const targetAlias = aliases[tId];
+      const exists = registeredTanks.some(t => {
+        const tid = t.tank_id || t.id;
+        return tid === tId || (targetAlias && tid === targetAlias);
+      });
       if (!exists) {
         registeredTanks.push(record);
       }

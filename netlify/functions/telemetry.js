@@ -208,9 +208,25 @@ exports.handler = async (event, context) => {
       }
     } catch (e) {}
 
-    const fIdx = fallbackTanks.findIndex(t => t.tank_id === telemetryRecord.tank_id);
+    const aliases = {
+      'tank_01': 'TQ-02', 'tank_1': 'TQ-02', 'TQ-02': 'tank_01',
+      'tank_02': 'TQ-01', 'tank_2': 'TQ-01', 'TQ-01': 'tank_02',
+      'tank_03': 'TQ-03', 'tank_3': 'TQ-03', 'TQ-03': 'tank_03'
+    };
+    const targetAlias = aliases[telemetryRecord.tank_id];
+
+    const fIdx = fallbackTanks.findIndex(t => {
+      const tid = t.tank_id || t.id;
+      return tid === telemetryRecord.tank_id || (targetAlias && tid === targetAlias);
+    });
+
     if (fIdx > -1) {
-      fallbackTanks[fIdx] = telemetryRecord;
+      const originalId = fallbackTanks[fIdx].tank_id || fallbackTanks[fIdx].id || telemetryRecord.tank_id;
+      fallbackTanks[fIdx] = { 
+        ...fallbackTanks[fIdx], 
+        ...telemetryRecord, 
+        tank_id: originalId 
+      };
     } else {
       fallbackTanks.push(telemetryRecord);
     }
@@ -294,9 +310,25 @@ exports.handler = async (event, context) => {
       blobTanks = [];
     }
 
-    const bIdx = blobTanks.findIndex(t => t.tank_id === telemetryRecord.tank_id);
+    const aliases = {
+      'tank_01': 'TQ-02', 'tank_1': 'TQ-02', 'TQ-02': 'tank_01',
+      'tank_02': 'TQ-01', 'tank_2': 'TQ-01', 'TQ-01': 'tank_02',
+      'tank_03': 'TQ-03', 'tank_3': 'TQ-03', 'TQ-03': 'tank_03'
+    };
+    const targetAlias = aliases[telemetryRecord.tank_id];
+
+    const bIdx = blobTanks.findIndex(t => {
+      const tid = t.tank_id || t.id;
+      return tid === telemetryRecord.tank_id || (targetAlias && tid === targetAlias);
+    });
+
     if (bIdx > -1) {
-      blobTanks[bIdx] = telemetryRecord;
+      const originalId = blobTanks[bIdx].tank_id || blobTanks[bIdx].id || telemetryRecord.tank_id;
+      blobTanks[bIdx] = { 
+        ...blobTanks[bIdx], 
+        ...telemetryRecord, 
+        tank_id: originalId 
+      };
     } else {
       blobTanks.push(telemetryRecord);
     }
