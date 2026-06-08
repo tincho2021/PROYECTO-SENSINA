@@ -165,7 +165,20 @@ async function startServer() {
 
     // Extract & resolve product_id. Always use the exact, literal product_id sent by the device
     // (e.g. 'GP', 'GO2', 'NS') to preserve mappings for dispensers, nozzles, and transactions.
-    const resolvedProductId = product_id || 'GO2';
+    let resolvedProductId = product_id || 'GO2';
+    if (!product_id || product_id === 'GO2') {
+      if (tank_id === 'tank_01' || (tank_name && tank_name.toLowerCase().includes('premium')) || (product_name && product_name.toLowerCase().includes('grado 3'))) {
+        resolvedProductId = 'GP';
+      } else if (tank_id === 'tank_03' || (tank_name && tank_name.toLowerCase().includes('super')) || (product_name && product_name.toLowerCase().includes('super'))) {
+        resolvedProductId = 'NS';
+      }
+    } else if (resolvedProductId === 'GO3' || resolvedProductId === 'premium') {
+      resolvedProductId = 'GP';
+    } else if (resolvedProductId === 'nafta') {
+      resolvedProductId = 'NS';
+    } else if (resolvedProductId === 'gasoil') {
+      resolvedProductId = 'GO2';
+    }
 
     // Dynamic auto-registration of product in catalogue
     if (resolvedProductId) {

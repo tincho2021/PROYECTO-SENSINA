@@ -148,7 +148,22 @@ export default function App() {
             telemetries.forEach((tel: any) => {
               if (tel && tel.tank_id) {
                 const tankIndex = updatedTanks.findIndex((t: any) => t.id === tel.tank_id);
-                const pId = tel.product_id || "GO2";
+                let pId = tel.product_id;
+                if (!pId || pId === "GO2") {
+                  if (tel.tank_id === 'tank_01' || tel.tank_name?.toLowerCase().includes('premium') || tel.product_name?.toLowerCase().includes('premium') || tel.product_name?.toLowerCase().includes('grado 3')) {
+                    pId = "GP";
+                  } else if (tel.tank_id === 'tank_03' || tel.tank_name?.toLowerCase().includes('super') || tel.product_name?.toLowerCase().includes('super')) {
+                    pId = "NS";
+                  } else {
+                    pId = "GO2";
+                  }
+                } else if (pId === "GO3" || pId === "premium") {
+                  pId = "GP";
+                } else if (pId === "nafta") {
+                  pId = "NS";
+                } else if (pId === "gasoil") {
+                  pId = "GO2";
+                }
                 const tankObj = {
                   id: tel.tank_id,
                   siteId: tel.site_id || "rosario-01",
