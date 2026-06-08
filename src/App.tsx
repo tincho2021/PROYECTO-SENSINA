@@ -162,7 +162,15 @@ export default function App() {
             
             telemetries.forEach((tel: any) => {
               if (tel && tel.tank_id) {
-                const tankIndex = updatedTanks.findIndex((t: any) => t.id === tel.tank_id);
+                // Sincronización transparente de alias físicos vs. lógicos (tank_xx <-> TQ-xx)
+                const aliases: Record<string, string> = {
+                  'tank_01': 'TQ-02', 'tank_1': 'TQ-02', 'TQ-02': 'tank_01',
+                  'tank_02': 'TQ-01', 'tank_2': 'TQ-01', 'TQ-01': 'tank_02',
+                  'tank_03': 'TQ-03', 'tank_3': 'TQ-03', 'TQ-03': 'tank_03'
+                };
+                const mappedAlias = aliases[tel.tank_id];
+                const tankIndex = updatedTanks.findIndex((t: any) => t.id === tel.tank_id || (mappedAlias && t.id === mappedAlias));
+
                 let pId = tel.product_id;
                 if (!pId || pId === "GO2") {
                   if (tel.tank_id === 'tank_01' || tel.tank_name?.toLowerCase().includes('premium') || tel.product_name?.toLowerCase().includes('premium') || tel.product_name?.toLowerCase().includes('grado 3')) {
@@ -179,8 +187,10 @@ export default function App() {
                 } else if (pId === "gasoil") {
                   pId = "GO2";
                 }
+
+                const targetId = tankIndex > -1 ? updatedTanks[tankIndex].id : tel.tank_id;
                 const tankObj = {
-                  id: tel.tank_id,
+                  id: targetId,
                   siteId: tel.site_id || "rosario-01",
                   productId: pId,
                   name: tel.tank_name || `Cisterna Sonda ${tel.tank_id}`,

@@ -139,6 +139,73 @@ exports.handler = async (event, context) => {
     }
   }
 
+  // --- SEGURIDAD MULTI-CISTERNA SÍNCRONA (ANTI RACE CONDITION) ---
+  // Para evitar sobreescrituras por condiciones de carrera entre llamadas POST concurrentes
+  // del microcontrolador o simulador, leemos las telemetrías individuales de cada cisterna en paralelo.
+  const knownTankIds = ['tank_01', 'tank_02', 'tank_03'];
+  const upToDateTanks = {};
+
+  // 1) Cargar del mapa local en memoria si existe
+  if (global.latestTanksMap) {
+    Object.entries(global.latestTanksMap).forEach(([tId, r]) => {
+      upToDateTanks[tId] = r;
+    });
+  }
+
+  // 2) Cargar de Netlify Blobs individuales en paralelo
+  try {
+    const store = getStore({ name: "cesti-telemetry" });
+    const blobPromises = knownTankIds.map(async (tId) => {
+      try {
+        const individual = await store.getJSON(`tank-telemetry-${tId}`);
+        if (individual && individual.received_at) {
+          if (!upToDateTanks[tId] || new Date(individual.received_at) > new Date(upToDateTanks[tId].received_at)) {
+            upToDateTanks[tId] = individual;
+          }
+        }
+      } catch (err) {}
+    });
+    await Promise.all(blobPromises);
+  } catch (error) {
+    console.warn("[C.E.S.T.I.] Falló consulta a Blobs para telemetrías individuales:", error.message);
+  }
+
+  // 3) Cargar de KVDB individual en paralelo
+  try {
+    const kvPromises = knownTankIds.map(async (tId) => {
+      try {
+        const kvRes = await fetch(`https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/tank-telemetry-${tId}`);
+        if (kvRes.ok) {
+          const individual = await kvRes.json();
+          if (individual && individual.received_at) {
+            if (!upToDateTanks[tId] || new Date(individual.received_at) > new Date(upToDateTanks[tId].received_at)) {
+              upToDateTanks[tId] = individual;
+            }
+          }
+        }
+      } catch (err) {}
+    });
+    await Promise.all(kvPromises);
+  } catch (err) {
+    console.warn("[C.E.S.T.I.] Falló consulta a KVDB para telemetrías individuales:", err.message);
+  }
+
+  // 4) Fusionar de forma destructiva sobre registeredTanks usando la telemetría individual más fresca
+  if (registeredTanks && Array.isArray(registeredTanks)) {
+    registeredTanks = registeredTanks.map(t => {
+      const match = upToDateTanks[t.tank_id || t.id];
+      return match ? { ...t, ...match } : t;
+    });
+    
+    // Si hay algún tanque en upToDateTanks que no esté en registeredTanks, lo agregamos
+    Object.entries(upToDateTanks).forEach(([tId, record]) => {
+      const exists = registeredTanks.some(t => (t.tank_id || t.id) === tId);
+      if (!exists) {
+        registeredTanks.push(record);
+      }
+    });
+  }
+
   // Cargar productos registrados dinámicos
   let registeredProducts = null;
   try {

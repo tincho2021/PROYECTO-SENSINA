@@ -221,6 +221,12 @@ exports.handler = async (event, context) => {
       body: JSON.stringify(fallbackTanks)
     });
 
+    await fetch(`https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/tank-telemetry-${telemetryRecord.tank_id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(telemetryRecord)
+    });
+
     await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/latest-telemetry", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -296,6 +302,7 @@ exports.handler = async (event, context) => {
     }
 
     await store.setJSON("registered-tanks", blobTanks);
+    await store.setJSON(`tank-telemetry-${telemetryRecord.tank_id}`, telemetryRecord);
     await store.setJSON("latest-telemetry", telemetryRecord);
 
     // 2. Guardar Productos en Blobs
