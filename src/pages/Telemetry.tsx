@@ -38,7 +38,7 @@ export default function Telemetry({ data, onRefresh, onNavigate }: TelemetryProp
   
   const selectedTank = tanks.find((t: any) => t.id === selectedTankId) || tanks[0];
   const selectedProduct = products.find((p: any) => p.id === selectedTank?.productId);
-  const selectedProdColor = getProductColorHex(selectedTank?.productId);
+  const selectedProdColor = selectedProduct?.hexColor || selectedProduct?.product_color || getProductColorHex(selectedTank?.productId);
   
   const tankPercentage = selectedTank 
     ? calculateTankPercentage(selectedTank.currentVolumeLiters, selectedTank.capacityLiters)
@@ -132,7 +132,7 @@ export default function Telemetry({ data, onRefresh, onNavigate }: TelemetryProp
               const isSelected = t.id === selectedTankId;
               const prod = products.find((p: any) => p.id === t.productId);
               const pct = calculateTankPercentage(t.currentVolumeLiters, t.capacityLiters);
-              const tColor = getProductColorHex(t.productId);
+              const tColor = prod?.hexColor || prod?.product_color || getProductColorHex(t.productId);
 
               return (
                 <div

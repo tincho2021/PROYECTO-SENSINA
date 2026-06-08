@@ -119,7 +119,10 @@ exports.handler = async (event, context) => {
   const telemetryRecord = {
     device_id: payload.device_id || "SENSINA-GENERIC-01",
     site_id: payload.site_id || "ESTACION-GENERIC",
+    site_name: payload.site_name || "Sede " + (payload.site_id || "ESTACION-GENERIC"),
+    site_location: payload.site_location || "Ubicación Sincronizada",
     tank_id: payload.tank_id,
+    tank_name: payload.tank_name || `Cisterna Sonda ${payload.tank_id}`,
     timestamp: payload.timestamp || received_at,
     height_mm: payload.height_mm,
     volume_liters: payload.volume_liters,
@@ -130,6 +133,12 @@ exports.handler = async (event, context) => {
     battery_percent: payload.battery_percent,
     signal_rssi: payload.signal_rssi,
     sensor_status: payload.sensor_status,
+    product_id: payload.product_id || "GO2",
+    product_name: payload.product_name,
+    product_type: payload.product_type,
+    product_price: payload.product_price,
+    product_density: payload.product_density,
+    product_color: payload.product_color,
     received_at,
     source_ip: clientIp,
     event_type: "tank_telemetry"
@@ -140,9 +149,55 @@ exports.handler = async (event, context) => {
   // Guardar en memoria de sesión local (Hot starts de Lambda)
   global.latestTelemetryData = telemetryRecord;
 
-  // Guardar en KVDB.io como persistencia universal de respaldo externa (¡Resuelve stateless de Lambdas!)
+  // Productos base por defecto
+  const defaultProducts = [
+    {
+      id: 'GO2',
+      name: 'Gasoil Grado 2 (Ultra Diesel)',
+      type: 'gasoil',
+      referenceDensity: 840,
+      color: 'emerald',
+      hexColor: '#10b981',
+      pricePerLiter: 1210.40,
+      minStock: 8000,
+      maxStock: 40000,
+      unit: 'L',
+      active: true,
+      createdAt: '2025-01-01T00:00:00Z'
+    },
+    {
+      id: 'GP',
+      name: 'Gasoil Grado 3 (Infinia Diesel)',
+      type: 'premium',
+      referenceDensity: 835,
+      color: 'teal',
+      hexColor: '#0d9488',
+      pricePerLiter: 1450.20,
+      minStock: 6000,
+      maxStock: 30000,
+      unit: 'L',
+      active: true,
+      createdAt: '2025-01-01T00:00:00Z'
+    },
+    {
+      id: 'NS',
+      name: 'Nafta Súper',
+      type: 'nafta',
+      referenceDensity: 735,
+      color: 'blue',
+      hexColor: '#3b82f6',
+      pricePerLiter: 1280.90,
+      minStock: 5000,
+      maxStock: 25000,
+      unit: 'L',
+      active: true,
+      createdAt: '2025-01-01T00:00:00Z'
+    }
+  ];
+
+  // --- PERSISTENCIA EN KVDB.IO ---
   try {
-    // Primero, obtener los tanques registrados acumulados
+    // 1. Persistencia de Tanques en KVDB
     let fallbackTanks = [];
     try {
       const kvGet = await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/registered-tanks");
@@ -169,14 +224,61 @@ exports.handler = async (event, context) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(telemetryRecord)
     });
-    console.log("[C.E.S.T.I. KVDB] Guardado exitoso de múltiples tanques en KVDB.io");
+
+    // 2. Persistencia y Auto-Registro de Producto en KVDB
+    let kvProducts = [];
+    try {
+      const getKvProds = await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/registered-products");
+      if (getKvProds.ok) {
+        kvProducts = await getKvProds.json();
+      }
+    } catch (e) {}
+
+    if (!Array.isArray(kvProducts) || kvProducts.length === 0) {
+      kvProducts = [...defaultProducts];
+    }
+
+    const resProdId = telemetryRecord.product_id;
+    let kvProdIdx = kvProducts.findIndex(p => p.id === resProdId);
+    if (kvProdIdx > -1) {
+      if (payload.product_name) kvProducts[kvProdIdx].name = payload.product_name;
+      if (payload.product_type) kvProducts[kvProdIdx].type = payload.product_type;
+      if (payload.product_price) kvProducts[kvProdIdx].pricePerLiter = Number(payload.product_price);
+      if (payload.product_density) kvProducts[kvProdIdx].referenceDensity = Number(payload.product_density);
+      if (payload.product_color) kvProducts[kvProdIdx].hexColor = payload.product_color;
+    } else {
+      kvProducts.push({
+        id: resProdId,
+        name: payload.product_name || `${resProdId} Combustible`,
+        type: payload.product_type || 'gasoil',
+        referenceDensity: Number(payload.product_density || 840),
+        color: 'teal',
+        hexColor: payload.product_color || '#0ea5e9',
+        pricePerLiter: Number(payload.product_price || 1200),
+        minStock: 2000,
+        maxStock: 40000,
+        unit: 'L',
+        active: true,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/registered-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(kvProducts)
+    });
+
+    console.log("[C.E.S.T.I. KVDB] Guardado exitoso de tanques y productos en KVDB.io");
   } catch (err) {
     console.warn("[C.E.S.T.I. KVDB WARN] Falló guardado en KVDB.io:", err.message);
   }
 
-  // Persistencia mediante Netlify Blobs si está configurado en producción
+  // --- PERSISTENCIA EN NETLIFY BLOBS ---
   try {
     const store = getStore({ name: "cesti-telemetry" });
+    
+    // 1. Guardar Tanques en Blobs
     let blobTanks = [];
     try {
       blobTanks = await store.getJSON("registered-tanks") || [];
@@ -193,7 +295,47 @@ exports.handler = async (event, context) => {
 
     await store.setJSON("registered-tanks", blobTanks);
     await store.setJSON("latest-telemetry", telemetryRecord);
-    console.log("[C.E.S.T.I. BLOB] Guardado existoso de múltiples tanques en Netlify Blobs.");
+
+    // 2. Guardar Productos en Blobs
+    let blobProducts = [];
+    try {
+      blobProducts = await store.getJSON("registered-products") || [];
+    } catch (e) {
+      blobProducts = [];
+    }
+
+    if (!Array.isArray(blobProducts) || blobProducts.length === 0) {
+      blobProducts = [...defaultProducts];
+    }
+
+    const bProdId = telemetryRecord.product_id;
+    let bProdIdx = blobProducts.findIndex(p => p.id === bProdId);
+    if (bProdIdx > -1) {
+      if (payload.product_name) blobProducts[bProdIdx].name = payload.product_name;
+      if (payload.product_type) blobProducts[bProdIdx].type = payload.product_type;
+      if (payload.product_price) blobProducts[bProdIdx].pricePerLiter = Number(payload.product_price);
+      if (payload.product_density) blobProducts[bProdIdx].referenceDensity = Number(payload.product_density);
+      if (payload.product_color) blobProducts[bProdIdx].hexColor = payload.product_color;
+    } else {
+      blobProducts.push({
+        id: bProdId,
+        name: payload.product_name || `${bProdId} Combustible`,
+        type: payload.product_type || 'gasoil',
+        referenceDensity: Number(payload.product_density || 840),
+        color: 'teal',
+        hexColor: payload.product_color || '#0ea5e9',
+        pricePerLiter: Number(payload.product_price || 1200),
+        minStock: 2000,
+        maxStock: 40000,
+        unit: 'L',
+        active: true,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    await store.setJSON("registered-products", blobProducts);
+
+    console.log("[C.E.S.T.I. BLOB] Guardado exitoso de tanques y productos en Netlify Blobs.");
   } catch (error) {
     console.warn("[C.E.S.T.I. BLOB WARN] Falló acceso a Netlify Blobs (común en local sin CLI):", error.message);
   }

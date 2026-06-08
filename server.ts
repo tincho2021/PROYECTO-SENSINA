@@ -28,17 +28,17 @@ import {
 const db = {
   sites: [...mockSites],
   products: [...mockProducts],
-  tanks: [] as any[],
-  dispensers: [] as any[],
+  tanks: [...mockTanks],
+  dispensers: [...mockDispensers],
   drivers: [...mockDrivers],
   vehicles: [...mockVehicles],
-  transactions: [] as any[],
-  deliveries: [] as any[],
-  reconciliations: [] as any[],
-  alerts: [] as any[],
+  transactions: [...mockTransactions],
+  deliveries: [...mockDeliveries],
+  reconciliations: [...mockReconciliations],
+  alerts: [...mockAlerts],
   devices: [...mockDevices],
   users: [...mockUsers],
-  auditLogs: [] as any[]
+  auditLogs: [...mockAuditLogs]
 };
 
 async function startServer() {
@@ -398,22 +398,26 @@ async function startServer() {
       device_id: req.body.device_id || "CTRL-SURT-0001",
       site_id: req.body.site_id || "ESTACION-001",
       timestamp: req.body.timestamp || new Date().toISOString(),
-      dispensers: dispensers.map(disp => ({
-        dispenser_id: disp.dispenser_id,
-        hose_id: disp.hose_id || "M01",
-        nozzle: disp.nozzle || 1,
-        product: disp.product || "Combustible",
-        product_id: disp.product_id || "GO2",
-        suction_tank_id: disp.suction_tank_id || undefined,
-        status: disp.status || "available",
-        last_transaction_id: disp.last_transaction_id || null,
-        last_sale_liters: disp.last_sale_liters || 0,
-        last_sale_amount: disp.last_sale_amount || 0,
-        current_liters: disp.current_liters || 0,
-        current_amount: disp.current_amount || 0,
-        error_code: disp.error_code || null,
-        operator_message: disp.operator_message || "Disponible"
-      })),
+      dispensers: dispensers.map(disp => {
+        const dProd = db.products.find(p => p.id === disp.product_id) || 
+                      (disp.product_id === 'GO3' ? db.products.find(p => p.id === 'GP') : null);
+        return {
+          dispenser_id: disp.dispenser_id,
+          hose_id: disp.hose_id || "M01",
+          nozzle: disp.nozzle || 1,
+          product: dProd ? dProd.name.split(' (')[0] : (disp.product || "Combustible"),
+          product_id: disp.product_id || "GO2",
+          suction_tank_id: disp.suction_tank_id || undefined,
+          status: disp.status || "available",
+          last_transaction_id: disp.last_transaction_id || null,
+          last_sale_liters: disp.last_sale_liters || 0,
+          last_sale_amount: disp.last_sale_amount || 0,
+          current_liters: disp.current_liters || 0,
+          current_amount: disp.current_amount || 0,
+          error_code: disp.error_code || null,
+          operator_message: disp.operator_message || "Disponible"
+        };
+      }),
       received_at: new Date().toISOString(),
       event_type: "dispenser_status"
     };
@@ -501,7 +505,11 @@ async function startServer() {
       dispenser_id: newTx.dispenserId,
       hose_id: `M0${newTx.hose}`,
       nozzle: newTx.hose,
-      product: product_id === 'GO2' ? 'Gasoil Grado 2' : product_id === 'GO3' ? 'Gasoil Grado 3' : product_id === 'NS' ? 'Nafta Súper' : 'Nafta Premium',
+      product: (() => {
+        const associatedProd = db.products.find(p => p.id === product_id) || 
+                               (product_id === 'GO3' ? db.products.find(p => p.id === 'GP') : null);
+        return associatedProd ? associatedProd.name.split(' (')[0] : (product_id === 'GO2' ? 'Gasoil Grado 2' : product_id === 'GP' || product_id === 'GO3' ? 'Gasoil Grado 3' : product_id === 'NS' ? 'Nafta Súper' : 'Nafta Premium');
+      })(),
       product_id: product_id,
       liters: newTx.liters,
       amount: newTx.amount,
@@ -977,17 +985,17 @@ async function startServer() {
   app.post('/api/reset-data', (req, res) => {
     db.sites = [...mockSites];
     db.products = [...mockProducts];
-    db.tanks = [];
-    db.dispensers = [];
+    db.tanks = [...mockTanks];
+    db.dispensers = [...mockDispensers];
     db.drivers = [...mockDrivers];
     db.vehicles = [...mockVehicles];
-    db.transactions = [];
-    db.deliveries = [];
-    db.reconciliations = [];
-    db.alerts = [];
+    db.transactions = [...mockTransactions];
+    db.deliveries = [...mockDeliveries];
+    db.reconciliations = [...mockReconciliations];
+    db.alerts = [...mockAlerts];
     db.devices = [...mockDevices];
     db.users = [...mockUsers];
-    db.auditLogs = [];
+    db.auditLogs = [...mockAuditLogs];
 
     res.json({ success: true, message: 'Base de datos simulada restaurada a valores predeterminados.' });
   });

@@ -123,8 +123,9 @@ export function VisualTanksSection({ tanks, products, onNavigate }: { tanks: any
               badgeText = 'Fuera Línea';
             }
 
-            const prodName = products.find((p: any) => p.id === t.productId)?.name?.split(' (')[0] || t.productId || 'Gasoil';
-            const barLeftColor = getProductColorHex(t.productId);
+            const associatedProd = products.find((p: any) => p.id === t.productId);
+            const prodName = associatedProd?.name?.split(' (')[0] || t.productId || 'Gasoil';
+            const barLeftColor = associatedProd?.hexColor || associatedProd?.product_color || getProductColorHex(t.productId);
 
             return (
               <div 
