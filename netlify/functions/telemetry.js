@@ -148,6 +148,8 @@ exports.handler = async (event, context) => {
 
   // Guardar en memoria de sesión local (Hot starts de Lambda)
   global.latestTelemetryData = telemetryRecord;
+  global.latestTanksMap = global.latestTanksMap || {};
+  global.latestTanksMap[telemetryRecord.tank_id] = telemetryRecord;
 
   // Productos base por defecto
   const defaultProducts = [

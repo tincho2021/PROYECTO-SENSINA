@@ -67,8 +67,76 @@ exports.handler = async (event, context) => {
     latestData = global.latestTelemetryData || null;
   }
 
-  if (!registeredTanks && latestData) {
-    registeredTanks = [latestData];
+  if (!registeredTanks) {
+    if (global.latestTanksMap && Object.keys(global.latestTanksMap).length > 0) {
+      registeredTanks = Object.values(global.latestTanksMap);
+    } else if (latestData) {
+      registeredTanks = [latestData];
+    } else {
+      const nowStr = new Date().toISOString();
+      registeredTanks = [
+        {
+          tank_id: 'tank_02',
+          site_id: 'ESTACION-001',
+          product_id: 'GO2',
+          tank_name: 'Cisterna Diesel Comun',
+          capacity_liters: 20000,
+          volume_liters: 12160,
+          height_mm: 1520,
+          temperature_c: 15.8,
+          water_mm: 4,
+          battery_v: 3.62,
+          battery_percent: 100,
+          signal_rssi: -65,
+          sensor_status: 'normal',
+          received_at: nowStr
+        },
+        {
+          tank_id: 'tank_01',
+          site_id: 'ESTACION-001',
+          product_id: 'GP',
+          tank_name: 'Cisterna Gasoil Premium',
+          capacity_liters: 30000,
+          volume_liters: 21500,
+          height_mm: 2150,
+          temperature_c: 16.4,
+          water_mm: 0,
+          battery_v: 3.62,
+          battery_percent: 100,
+          signal_rssi: -60,
+          sensor_status: 'normal',
+          received_at: nowStr
+        },
+        {
+          tank_id: 'tank_03',
+          site_id: 'ESTACION-001',
+          product_id: 'NS',
+          tank_name: 'Cisterna Nafta Super',
+          capacity_liters: 15000,
+          volume_liters: 7050,
+          height_mm: 940,
+          temperature_c: 17.2,
+          water_mm: 0,
+          battery_v: 3.62,
+          battery_percent: 100,
+          signal_rssi: -62,
+          sensor_status: 'normal',
+          received_at: nowStr
+        }
+      ];
+    }
+  } else {
+    // Merge latest global.latestTanksMap items if they exist to keep them up to date across cold restarts
+    if (global.latestTanksMap) {
+      Object.entries(global.latestTanksMap).forEach(([tId, record]) => {
+        const idx = registeredTanks.findIndex(t => (t.tank_id || t.id) === tId);
+        if (idx > -1) {
+          registeredTanks[idx] = { ...registeredTanks[idx], ...record };
+        } else {
+          registeredTanks.push(record);
+        }
+      });
+    }
   }
 
   // Cargar productos registrados dinámicos

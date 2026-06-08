@@ -98,12 +98,27 @@ export default function App() {
         const req = await fetch(localUrl);
         if (req.ok) {
           const res = await req.json();
-          // If the local response is valid JSON and successful (res.ok is true), 
-          // accept it as the source of truth, even if there's no latest single-event telemetry data yet (res.data is null).
+          // If the local response is valid JSON, successful, and has populated tanks list or telemetry data,
+          // accept it as the source of truth.
+          const hasTanks = res && res.tanks && res.tanks.length > 0;
+          const hasData = res && res.data;
+          if (res && res.ok && (hasTanks || hasData)) {
+            return res;
+          }
+        }
+      } catch (e) {
+        console.warn(`Local endpoint ${localUrl} failed, trying fallback:`, e);
+      }
+
+      // Try the fallback web endpoint if local fails or has no active data
+      try {
+        const req = await fetch(fallbackUrl);
+        if (req.ok) {
+          const res = await req.json();
           if (res && res.ok) return res;
         }
       } catch (e) {
-        console.warn(`Local endpoint ${localUrl} failed:`, e);
+        console.error(`Fallback endpoint ${fallbackUrl} failed as well:`, e);
       }
       return null;
     };

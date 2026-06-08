@@ -5,6 +5,7 @@
 
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 
 // Direct initial state from mockData structures
@@ -96,6 +97,7 @@ async function startServer() {
       products: db.products,
       tanks: db.tanks.map(t => ({
         tank_id: t.id,
+        site_id: t.siteId,
         height_mm: t.currentHeightMm,
         volume_liters: t.currentVolumeLiters,
         capacity_liters: t.capacityLiters,
@@ -247,11 +249,25 @@ async function startServer() {
       }
     }
 
-    let tank = db.tanks.find(t => t.id === tank_id);
+    // Seamless alias resolution between incoming ESP32 micro-controller IDs and pre-configured database tank IDs.
+    // - "tank_02" / "tank_2" maps to TQ-01 (Diesel Común / Gasoil G2)
+    // - "tank_01" / "tank_1" maps to TQ-02 (Premium / Gasoil G3 / Infinia Diesel)
+    // - "tank_03" / "tank_3" maps to TQ-03 (Nafta Súper)
+    // This maintains consistent suction mappings for dispensers and live transactional updates.
+    let targetTankId = tank_id;
+    if (tank_id === 'tank_01' || tank_id === 'tank_1') {
+      targetTankId = 'TQ-02';
+    } else if (tank_id === 'tank_02' || tank_id === 'tank_2') {
+      targetTankId = 'TQ-01';
+    } else if (tank_id === 'tank_03' || tank_id === 'tank_3') {
+      targetTankId = 'TQ-03';
+    }
+
+    let tank = db.tanks.find(t => t.id === targetTankId);
     if (!tank) {
       const cap = Number(capacity_liters || 20000);
       tank = {
-        id: tank_id,
+        id: targetTankId,
         siteId: calculatedSiteId,
         productId: resolvedProductId || "GO2",
         name: tank_name || `Cisterna Sonda ${tank_id}`,
@@ -341,7 +357,7 @@ async function startServer() {
 
     // Guardar para el endpoint de última telemetría
     latestTelemetryData = {
-      tank_id,
+      tank_id: tank.id,
       height_mm: tank.currentHeightMm,
       volume_liters: tank.currentVolumeLiters,
       capacity_liters: tank.capacityLiters,
@@ -356,7 +372,7 @@ async function startServer() {
       received_at: new Date().toISOString()
     };
 
-    res.json({ success: true, message: `Telemetry updated successfully for tank ${tank_id}`, tank });
+    res.json({ success: true, message: `Telemetry updated successfully for tank ${tank.id} (ESP32 node tank: ${tank_id})`, tank });
   });
 
   // 2. ESP32 Surtidores Status Endpoint
