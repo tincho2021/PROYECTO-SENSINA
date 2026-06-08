@@ -1,0 +1,6 @@
+{
+  "name": "C.E.S.T.I. - TELEMETRIA",
+  "description": "Plataforma industrial para la gestión de combustible, telemedición de tanques y control de flotas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "Telemetry": {
+      "title": "Tank Telemetry Record",
+      "description": "Represents the latest sensor measurements from a fuel tank.",
+      "type": "object",
+      "properties": {
+        "payload": {
+          "type": "string",
+          "description": "JSON string of the original telemetry record."
+        }
+      },
+      "required": ["payload"]
+    },
+    "DispenserStatus": {
+      "title": "Dispenser Status Record",
+      "description": "Represents the current electronic/mechanical state of a dispenser nozzle.",
+      "type": "object",
+      "properties": {
+        "payload": {
+          "type": "string",
+          "description": "JSON string of the original dispenser state."
+        }
+      },
+      "required": ["payload"]
+    },
+    "FuelTransaction": {
+      "title": "Fuel Transaction Record",
+      "description": "Represents the latest dispatch details from a fuel transaction.",
+      "type": "object",
+      "properties": {
+        "payload": {
+          "type": "string",
+          "description": "JSON string of the original fuel transaction."
+        }
+      },
+      "required": ["payload"]
+    },
+    "Alarms": {
+      "title": "IoT System Alarms Record",
+      "description": "Represents the latest alarm states.",
+      "type": "object",
+      "properties": {
+        "payload": {
+          "type": "string",
+          "description": "JSON string of the original alarms state."
+        }
+      },
+      "required": ["payload"]
+    }
+  },
+  "firestore": {
+    "/telemetry/latest": {
+      "schema": "Telemetry",
+      "description": "Stores the latest telemetry data JSON."
+    },
+    "/dispenser_status/latest": {
+      "schema": "DispenserStatus",
+      "description": "Stores the latest dispenser status JSON."
+    },
+    "/fuel_transactions/latest": {
+      "schema": "FuelTransaction",
+      "description": "Stores the latest fuel transactions JSON."
+    },
+    "/alarms/latest": {
+      "schema": "Alarms",
+      "description": "Stores the latest alarms JSON."
+    }
+  }
+}

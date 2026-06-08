@@ -1,0 +1,662 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import {
+  Site,
+  Product,
+  Tank,
+  Dispenser,
+  FuelTransaction,
+  Driver,
+  Vehicle,
+  Delivery,
+  InventoryReconciliation,
+  Alert,
+  DeviceRegistry,
+  AuditLog,
+  User
+} from '../types';
+
+import {
+  mockSites,
+  mockProducts,
+  mockTanks,
+  mockDispensers,
+  mockDrivers,
+  mockVehicles,
+  mockTransactions,
+  mockDeliveries,
+  mockReconciliations,
+  mockAlerts,
+  mockDevices,
+  mockUsers,
+  mockAuditLogs
+} from '../data/mockData';
+
+// Local pure client-side fallback state
+let clientDb = {
+  sites: [...mockSites],
+  products: [...mockProducts],
+  tanks: [] as Tank[],
+  dispensers: [] as Dispenser[],
+  drivers: [...mockDrivers],
+  vehicles: [...mockVehicles],
+  transactions: [] as FuelTransaction[],
+  deliveries: [] as Delivery[],
+  reconciliations: [] as InventoryReconciliation[],
+  alerts: [] as Alert[],
+  devices: [...mockDevices],
+  users: [...mockUsers],
+  auditLogs: [] as AuditLog[]
+};
+
+// Check if we are running in browser context
+const isServerAvailable = true;
+
+/**
+ * Fetch all available state from full-stack backend, with local client fallback
+ */
+export async function fetchAllData() {
+  try {
+    const res = await fetch('/api/all-data');
+    if (!res.ok) throw new Error('Failed to fetch from live backend server');
+    const data = await res.json();
+    // Synchronize local fallback variables
+    clientDb = data;
+    return clientDb;
+  } catch (error) {
+    console.warn('[SENSINA API] Backend server offline or starting up, using local state.', error);
+    return clientDb;
+  }
+}
+
+/**
+ * Manual intake/delivery registration (increasing tank stocks)
+ */
+export async function registerDelivery(deliveryData: {
+  supplier: string;
+  invoiceNumber: string;
+  productId: string;
+  tankId: string;
+  litersDeclared: number;
+  operator: string;
+  notes: string;
+  density: number;
+  temperature: number;
+}) {
+  try {
+    const res = await fetch('/api/add-delivery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deliveryData)
+    });
+    if (!res.ok) throw new Error('Error registering load on backend');
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.warn('[SENSINA API] Post failed, performing client-side simulation.', err);
+    
+    // Simulate locally
+    const tank = clientDb.tanks.find(t => t.id === deliveryData.tankId);
+    if (tank) {
+      const added = Number(deliveryData.litersDeclared);
+      const beforeLit = tank.currentVolumeLiters;
+      tank.currentVolumeLiters = Math.min(tank.capacityLiters, tank.currentVolumeLiters + added);
+      tank.currentHeightMm = Math.round((tank.currentVolumeLiters / tank.capacityLiters) * tank.heightMm);
+      tank.lastUpdated = new Date().toISOString();
+
+      const newDel: Delivery = {
+        id: `DL-LOCAL-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        supplier: deliveryData.supplier,
+        invoiceNumber: deliveryData.invoiceNumber,
+        productId: deliveryData.productId,
+        tankId: deliveryData.tankId,
+        litersDeclared: added,
+        litersMeasuredBefore: beforeLit,
+        litersMeasuredAfter: tank.currentVolumeLiters,
+        differenceLiters: tank.currentVolumeLiters - (beforeLit + added),
+        temperatureC: Number(deliveryData.temperature),
+        density: Number(deliveryData.density),
+        operator: deliveryData.operator,
+        notes: deliveryData.notes
+      };
+
+      clientDb.deliveries.unshift(newDel);
+
+      clientDb.auditLogs.unshift({
+        id: `AUD-LOCAL-${Date.now()}`,
+        userId: 'client-user',
+        username: 'admin',
+        action: 'Descarga Realizada (Offline)',
+        details: `Cargados ${added} L de combustible en ${tank.name}.`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    return { success: true, message: 'Registrado localmente (Offline fallback)' };
+  }
+}
+
+/**
+ * Register a new vehicle to fleet
+ */
+export async function registerVehicle(vehicleData: any) {
+  try {
+    const res = await fetch('/api/add-vehicle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(vehicleData)
+    });
+    if (!res.ok) throw new Error('Error');
+    return await res.json();
+  } catch (err) {
+    const newVeh: Vehicle = {
+      id: `VEH-LOCAL-${Date.now()}`,
+      plate: vehicleData.plate,
+      brand: vehicleData.brand,
+      model: vehicleData.model,
+      type: vehicleData.type || 'Pick-up',
+      costCenter: vehicleData.costCenter || 'Mantenimiento',
+      tankCapacityLiters: Number(vehicleData.tankCapacityLiters || 80),
+      expectedKmL: Number(vehicleData.expectedKmL || 10),
+      lastOdometer: Number(vehicleData.lastOdometer || 0),
+      active: true,
+      createdAt: new Date().toISOString()
+    };
+    clientDb.vehicles.push(newVeh);
+    return { success: true, vehicle: newVeh };
+  }
+}
+
+/**
+ * Register a new driver to fleet
+ */
+export async function registerDriver(driverData: any) {
+  try {
+    const res = await fetch('/api/add-driver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(driverData)
+    });
+    if (!res.ok) throw new Error('Error');
+    return await res.json();
+  } catch (err) {
+    const newDrv: Driver = {
+      id: `DRV-LOCAL-${Date.now()}`,
+      name: driverData.name,
+      document: driverData.document || '',
+      rfidCard: driverData.rfidCard,
+      dailyLimitLiters: Number(driverData.dailyLimitLiters || 200),
+      monthlyLimitLiters: Number(driverData.monthlyLimitLiters || 3000),
+      active: true,
+      costCenter: driverData.costCenter || 'Logística',
+      createdAt: new Date().toISOString()
+    };
+    clientDb.drivers.push(newDrv);
+    return { success: true, driver: newDrv };
+  }
+}
+
+/**
+ * Acknowledge or resolve alerts
+ */
+export async function acknowledgeAlert(alertId: string, comments: string, username: string) {
+  try {
+    const res = await fetch('/api/acknowledge-alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alertId, comments, resolvedBy: username })
+    });
+    if (!res.ok) throw new Error();
+    return await res.json();
+  } catch (err) {
+    const alert = clientDb.alerts.find(a => a.id === alertId);
+    if (alert) {
+      alert.status = 'acknowledged';
+      alert.resolvedBy = username;
+      alert.comments = comments;
+    }
+    return { success: true, alert };
+  }
+}
+
+export async function resolveAlert(alertId: string, comments: string, username: string) {
+  try {
+    const res = await fetch('/api/resolve-alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alertId, comments, resolvedBy: username })
+    });
+    if (!res.ok) throw new Error();
+    return await res.json();
+  } catch (err) {
+    const alert = clientDb.alerts.find(a => a.id === alertId);
+    if (alert) {
+      alert.status = 'resolved';
+      alert.resolvedBy = username;
+      alert.comments = comments;
+    }
+    return { success: true, alert };
+  }
+}
+
+/**
+ * Trigger ESP32 simulator payload locally or server-side (POST /api/telemetry)
+ */
+export async function simulateTelemetryPost(payload: {
+  tank_id: string;
+  volume_liters: number;
+  height_mm: number;
+  temperature_c: number;
+  water_mm: number;
+  signal_rssi: number;
+  battery_percent: number;
+  sensor_status: 'normal' | 'low_stock' | 'critical_low' | 'high_level' | 'no_comm' | 'leak_suspect';
+}, apiKey: string) {
+  try {
+    const res = await fetch('/api/telemetry', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err) {
+    // Local simulation
+    const tank = clientDb.tanks.find(t => t.id === payload.tank_id);
+    if (tank) {
+      tank.currentVolumeLiters = payload.volume_liters;
+      tank.currentHeightMm = payload.height_mm;
+      tank.temperatureC = payload.temperature_c;
+      tank.waterMm = payload.water_mm;
+      tank.signalRssi = payload.signal_rssi;
+      tank.batteryPercent = payload.battery_percent;
+      tank.sensorStatus = payload.sensor_status;
+      tank.lastUpdated = new Date().toISOString();
+      
+      // Auto-warning
+      if (tank.currentVolumeLiters <= tank.capacityLiters * 0.15) {
+        tank.sensorStatus = 'critical_low';
+      } else if (tank.currentVolumeLiters <= tank.capacityLiters * 0.25) {
+        tank.sensorStatus = 'low_stock';
+      } else {
+        tank.sensorStatus = 'normal';
+      }
+    }
+    return { success: true, message: 'Simulated telemetry stored on client context (Offline)' };
+  }
+}
+
+/**
+ * Trigger ESP32 Surtidores Status Simulator
+ */
+export async function simulateDispenserPost(dispenser_id: string, status: any, driver: string, vehicle: string, plate: string, liters: number, amount: number, apiKey: string) {
+  const payload = {
+    dispensers: [
+      {
+        dispenser_id,
+        status,
+        driver,
+        vehicle,
+        plate,
+        last_sale_liters: liters,
+        last_sale_amount: amount,
+        odometer: 140000,
+        authorization_method: 'RFID'
+      }
+    ]
+  };
+
+  try {
+    const res = await fetch('/api/dispenser-status', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err) {
+    const disp = clientDb.dispensers.find(d => d.id === dispenser_id);
+    if (disp) {
+      disp.status = status;
+      disp.activeDriver = driver || undefined;
+      disp.activeVehicle = vehicle || undefined;
+      disp.activePlate = plate || undefined;
+      disp.lastSaleLiters = liters || disp.lastSaleLiters;
+      disp.lastSaleAmount = amount || disp.lastSaleAmount;
+      disp.lastUpdated = new Date().toISOString();
+    }
+    return { success: true };
+  }
+}
+
+/**
+ * Register transaction via ESP32 simulator
+ */
+export async function simulateTransactionPost(txn: {
+  dispenser_id: string;
+  product_id: string;
+  liters: number;
+  amount: number;
+  price_per_liter: number;
+  driver_id: string;
+  vehicle_id: string;
+  vehicle_plate: string;
+  odometer: number;
+  authorization_method: 'RFID' | 'QR' | 'APP' | 'MANUAL';
+}, apiKey: string) {
+  try {
+    const res = await fetch('/api/fuel-transactions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        transaction_id: `TX-SIM-${Date.now()}`,
+        dispenser_id: txn.dispenser_id,
+        hose: 1,
+        product_id: txn.product_id,
+        liters: Number(txn.liters),
+        amount: Number(txn.amount),
+        price_per_liter: Number(txn.price_per_liter),
+        driver_id: txn.driver_id,
+        vehicle_id: txn.vehicle_id,
+        vehicle_plate: txn.vehicle_plate,
+        odometer: txn.odometer,
+        authorization_method: txn.authorization_method
+      })
+    });
+    return await res.json();
+  } catch (err) {
+    // Client-side execution in fallback
+    const newTx: FuelTransaction = {
+      id: `TX-SIM-${Date.now()}`,
+      siteId: 'ESTACION-001',
+      dispenserId: txn.dispenser_id,
+      hose: 1,
+      productId: txn.product_id,
+      liters: Number(txn.liters),
+      amount: Number(txn.amount),
+      pricePerLiter: Number(txn.price_per_liter),
+      driverId: txn.driver_id,
+      vehicleId: txn.vehicle_id,
+      vehiclePlate: txn.vehicle_plate,
+      odometer: txn.odometer,
+      timestampStart: new Date(Date.now() - 3 * 60000).toISOString(),
+      timestampEnd: new Date().toISOString(),
+      authorizationMethod: txn.authorization_method,
+      status: 'completed',
+      createdAt: new Date().toISOString()
+    };
+    clientDb.transactions.unshift(newTx);
+    
+    // Reduce levels
+    const tank = clientDb.tanks.find(t => t.productId === txn.product_id && t.siteId === 'ESTACION-001');
+    if (tank) {
+      tank.currentVolumeLiters = Math.max(0, tank.currentVolumeLiters - newTx.liters);
+      tank.currentHeightMm = Math.round((tank.currentVolumeLiters / tank.capacityLiters) * tank.heightMm);
+      tank.lastUpdated = new Date().toISOString();
+    }
+
+    // Free dispenser
+    const disp = clientDb.dispensers.find(d => d.id === txn.dispenser_id);
+    if (disp) {
+      disp.status = 'available';
+      disp.lastSaleLiters = txn.liters;
+      disp.lastSaleAmount = txn.amount;
+      disp.lastUpdated = new Date().toISOString();
+    }
+    
+    return { success: true };
+  }
+}
+
+/**
+ * Register or update a Tank
+ */
+export async function saveTank(tankData: any) {
+  try {
+    const res = await fetch('/api/tanks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tankData)
+    });
+    if (!res.ok) throw new Error('Error saving tank on backend');
+    return await res.json();
+  } catch (err) {
+    console.warn('[SENSINA API] Post failed, performing client-side simulation.', err);
+    const existingIndex = clientDb.tanks.findIndex(t => t.id === tankData.id);
+    const newTank = {
+      id: tankData.id || `ANK-${Date.now()}`,
+      siteId: tankData.siteId || 'rosario-01',
+      productId: tankData.productId,
+      name: tankData.name,
+      capacityLiters: Number(tankData.capacityLiters),
+      heightMm: Number(tankData.heightMm || 2000),
+      currentVolumeLiters: Number(tankData.currentVolumeLiters ?? (tankData.capacityLiters * 0.7)),
+      currentHeightMm: Number(tankData.currentHeightMm ?? (tankData.heightMm ? tankData.heightMm * 0.7 : 1400)),
+      temperatureC: Number(tankData.temperatureC ?? 15),
+      waterMm: Number(tankData.waterMm ?? 0),
+      batteryV: Number(tankData.batteryV ?? 3.6),
+      batteryPercent: Number(tankData.batteryPercent ?? 100),
+      signalRssi: Number(tankData.signalRssi ?? -55),
+      sensorStatus: tankData.sensorStatus || 'normal',
+      sensorType: tankData.sensorType || 'magnetostrictive',
+      lastUpdated: new Date().toISOString(),
+      createdAt: tankData.createdAt || new Date().toISOString()
+    } as any;
+
+    if (existingIndex > -1) {
+      clientDb.tanks[existingIndex] = { ...clientDb.tanks[existingIndex], ...newTank };
+    } else {
+      clientDb.tanks.push(newTank);
+    }
+    return { success: true, tank: newTank };
+  }
+}
+
+/**
+ * Delete a Tank
+ */
+export async function deleteTank(id: string) {
+  try {
+    const res = await fetch(`/api/tanks/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete tank on backend');
+    return await res.json();
+  } catch (err) {
+    console.warn('[SENSINA API] Delete failed, performing client-side simulation.', err);
+    clientDb.tanks = clientDb.tanks.filter(t => t.id !== id);
+    return { success: true };
+  }
+}
+
+/**
+ * Register or update Dispenser
+ */
+export async function saveDispenser(dispData: any) {
+  try {
+    const res = await fetch('/api/dispensers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dispData)
+    });
+    if (!res.ok) throw new Error('Error saving dispenser on backend');
+    return await res.json();
+  } catch (err) {
+    console.warn('[SENSINA API] Post failed, performing client-side simulation.', err);
+    const existingIndex = clientDb.dispensers.findIndex(d => d.id === dispData.id);
+    const newDisp = {
+      id: dispData.id || `DSP-${Date.now()}`,
+      siteId: dispData.siteId || 'rosario-01',
+      name: dispData.name,
+      hose: Number(dispData.hose || 1),
+      productId: dispData.productId,
+      suctionTankId: dispData.suctionTankId || undefined,
+      status: dispData.status || 'available',
+      lastSaleLiters: Number(dispData.lastSaleLiters ?? 0),
+      lastSaleAmount: Number(dispData.lastSaleAmount ?? 0),
+      lastUpdated: new Date().toISOString(),
+      createdAt: dispData.createdAt || new Date().toISOString()
+    } as any;
+
+    if (existingIndex > -1) {
+      clientDb.dispensers[existingIndex] = { ...clientDb.dispensers[existingIndex], ...newDisp };
+    } else {
+      clientDb.dispensers.push(newDisp);
+    }
+    return { success: true, dispenser: newDisp };
+  }
+}
+
+/**
+ * Delete Dispenser
+ */
+export async function deleteDispenser(id: string) {
+  try {
+    const res = await fetch(`/api/dispensers/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete dispenser on backend');
+    return await res.json();
+  } catch (err) {
+    console.warn('[SENSINA API] Delete failed, performing client-side simulation.', err);
+    clientDb.dispensers = clientDb.dispensers.filter(d => d.id !== id);
+    return { success: true };
+  }
+}
+
+/**
+ * Register or update Product
+ */
+export async function saveProduct(prodData: any) {
+  try {
+    const res = await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(prodData)
+    });
+    if (!res.ok) throw new Error('Error saving product on backend');
+    return await res.json();
+  } catch (err) {
+    console.warn('[SENSINA API] Post failed, performing client-side simulation.', err);
+    const existingIndex = clientDb.products.findIndex(p => p.id === prodData.id);
+    const newProd = {
+      id: prodData.id || `prod-${prodData.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      name: prodData.name,
+      type: prodData.type,
+      referenceDensity: Number(prodData.referenceDensity || 840),
+      color: prodData.color || 'border-teal-500',
+      hexColor: prodData.hexColor || '#0ea5e9',
+      pricePerLiter: Number(prodData.pricePerLiter),
+      minStock: Number(prodData.minStock || 2000),
+      maxStock: Number(prodData.maxStock || 40000),
+      unit: prodData.unit || 'L',
+      active: prodData.active ?? true,
+      createdAt: prodData.createdAt || new Date().toISOString()
+    } as any;
+
+    if (existingIndex > -1) {
+      clientDb.products[existingIndex] = newProd;
+    } else {
+      clientDb.products.push(newProd);
+    }
+    return { success: true, product: newProd };
+  }
+}
+
+/**
+ * Delete Product
+ */
+export async function deleteProduct(id: string) {
+  try {
+    const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete product on backend');
+    return await res.json();
+  } catch (err) {
+    console.warn('[SENSINA API] Delete failed, performing client-side simulation.', err);
+    clientDb.products = clientDb.products.filter(p => p.id !== id);
+    return { success: true };
+  }
+}
+
+/**
+ * Resets backend / frontend mock registers
+ */
+export async function resetSystemData() {
+  try {
+    const res = await fetch('/api/reset-data', { method: 'POST' });
+    return await res.json();
+  } catch (err) {
+    clientDb = {
+      sites: [...mockSites],
+      products: [...mockProducts],
+      tanks: [] as Tank[],
+      dispensers: [] as Dispenser[],
+      drivers: [...mockDrivers],
+      vehicles: [...mockVehicles],
+      transactions: [] as FuelTransaction[],
+      deliveries: [] as Delivery[],
+      reconciliations: [] as InventoryReconciliation[],
+      alerts: [] as Alert[],
+      devices: [...mockDevices],
+      users: [...mockUsers],
+      auditLogs: [] as AuditLog[]
+    };
+    return { success: true };
+  }
+}
+
+/**
+ * Save or update User
+ */
+export async function saveUser(userData: any) {
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData)
+    });
+    if (!res.ok) throw new Error('Error saving user on backend');
+    return await res.json();
+  } catch (err) {
+    console.warn('[SENSINA API] Post failed, performing client-side simulation.', err);
+    const existingIndex = clientDb.users.findIndex(u => u.id === userData.id || u.username === userData.username);
+    const newUser = {
+      id: userData.id || `usr-${Date.now().toString().slice(-4)}`,
+      name: userData.name,
+      email: userData.email || `${userData.username}@sensina.cloud`,
+      username: userData.username,
+      role: userData.role,
+      siteId: userData.siteId || 'ESTACION-001',
+      active: userData.active ?? true,
+      createdAt: userData.createdAt || new Date().toISOString()
+    };
+
+    if (existingIndex > -1) {
+      clientDb.users[existingIndex] = newUser;
+    } else {
+      clientDb.users.push(newUser);
+    }
+    return { success: true, user: newUser };
+  }
+}
+
+/**
+ * Delete User
+ */
+export async function deleteUser(id: string) {
+  try {
+    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete user on backend');
+    return await res.json();
+  } catch (err) {
+    console.warn('[SENSINA API] Delete failed, performing client-side simulation.', err);
+    clientDb.users = clientDb.users.filter(u => u.id !== id);
+    return { success: true };
+  }
+}
