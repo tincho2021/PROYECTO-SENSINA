@@ -232,7 +232,7 @@ export default function App() {
                   hose: updatedDisp.nozzle || 1,
                   productId: updatedDisp.product_id || "GO2",
                   suctionTankId: updatedDisp.suction_tank_id || undefined,
-                  status: updatedDisp.status || "available",
+                  status: updatedDisp.status === 'fueling' ? 'dispensing' : (updatedDisp.status || "available"),
                   lastSaleLiters: updatedDisp.last_sale_liters || 0,
                   lastSaleAmount: updatedDisp.last_sale_amount || 0,
                   activeDriver: updatedDisp.driver || undefined,
