@@ -109,7 +109,7 @@ export async function fetchAllData() {
   } catch (error) {
     console.warn('[SENSINA API] Backend server offline or starting up, using local state.', error);
     
-    // In Netlify or offline, retrieve latest transactions as well
+    // In Netlify or offline, retrieve latest transactions, tank statuses, and dispenser statuses
     try {
       const txRes = await fetch('https://velvety-vacherin-c43b91.netlify.app/api/latest-fuel-transactions');
       if (txRes.ok) {
@@ -140,6 +140,117 @@ export async function fetchAllData() {
       }
     } catch (e) {
       console.warn("Failed fallback fetch of latest fuel transactions", e);
+    }
+
+    // Fallback telemetry fetch to populate tanks instantly
+    try {
+      const telRes = await fetch('https://velvety-vacherin-c43b91.netlify.app/api/latest-telemetry');
+      if (telRes.ok) {
+        const telData = await telRes.json();
+        if (telData && telData.ok) {
+          const telemetries = telData.tanks && Array.isArray(telData.tanks)
+            ? telData.tanks
+            : telData.data
+              ? [telData.data]
+              : [];
+          
+          clientDb.tanks = [];
+          telemetries.forEach((tel: any) => {
+            if (tel && tel.tank_id) {
+              const aliases: Record<string, string> = {
+                'tank_01': 'TQ-02', 'tank_1': 'TQ-02', 'TQ-02': 'tank_01',
+                'tank_02': 'TQ-01', 'tank_2': 'TQ-01', 'TQ-01': 'tank_02',
+                'tank_03': 'TQ-03', 'tank_3': 'TQ-03', 'TQ-03': 'tank_03'
+              };
+              const mappedAlias = aliases[tel.tank_id];
+              const tankIndex = clientDb.tanks.findIndex((t: any) => t.id === tel.tank_id || (mappedAlias && t.id === mappedAlias));
+
+              let pId = tel.product_id;
+              if (!pId || pId === "GO2") {
+                if (tel.tank_id === 'tank_01' || tel.tank_name?.toLowerCase().includes('premium') || tel.product_name?.toLowerCase().includes('premium') || tel.product_name?.toLowerCase().includes('grado 3')) {
+                  pId = "GP";
+                } else if (tel.tank_id === 'tank_03' || tel.tank_name?.toLowerCase().includes('super') || tel.product_name?.toLowerCase().includes('super')) {
+                  pId = "NS";
+                } else {
+                  pId = "GO2";
+                }
+              } else if (pId === "GO3" || pId === "premium") {
+                pId = "GP";
+              } else if (pId === "nafta") {
+                pId = "NS";
+              } else if (pId === "gasoil") {
+                pId = "GO2";
+              }
+
+              const targetId = tankIndex > -1 ? clientDb.tanks[tankIndex].id : tel.tank_id;
+              const tankObj = {
+                id: targetId,
+                siteId: tel.site_id || "rosario-01",
+                productId: pId,
+                name: tel.tank_name || `Cisterna Sonda ${tel.tank_id}`,
+                capacityLiters: tel.capacity_liters || 20000,
+                heightMm: tel.height_mm ? Math.max(tel.height_mm, 2000) : 2000,
+                currentHeightMm: tel.height_mm,
+                currentVolumeLiters: tel.volume_liters,
+                temperatureC: tel.temperature_c ?? 15,
+                waterMm: tel.water_mm ?? 0,
+                batteryV: tel.battery_v ?? 3.6,
+                batteryPercent: tel.battery_percent ?? 100,
+                signalRssi: tel.signal_rssi ?? -60,
+                sensorStatus: tel.sensor_status || "normal",
+                sensorType: "magnetostrictive" as "hydrostatic" | "magnetostrictive" | "ultrasonic" | "manual",
+                lastUpdated: tel.received_at || new Date().toISOString(),
+                createdAt: tel.received_at || new Date().toISOString()
+              };
+
+              if (tankIndex > -1) {
+                clientDb.tanks[tankIndex] = { ...clientDb.tanks[tankIndex], ...tankObj };
+              } else {
+                clientDb.tanks.push(tankObj);
+              }
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("Failed fallback fetch of latest telemetry inside fetchAllData", e);
+    }
+
+    // Fallback dispenser fetch to populate dispensers instantly
+    try {
+      const dispRes = await fetch('https://velvety-vacherin-c43b91.netlify.app/api/latest-dispenser-status');
+      if (dispRes.ok) {
+        const dispData = await dispRes.json();
+        if (dispData && dispData.ok && dispData.data) {
+          const dispPayload = dispData.data;
+          if (Array.isArray(dispPayload.dispensers)) {
+            clientDb.dispensers = [];
+            dispPayload.dispensers.forEach((updatedDisp: any) => {
+              const dispObj = {
+                id: updatedDisp.dispenser_id,
+                siteId: dispPayload.site_id || "rosario-01",
+                name: `Surtidor ${updatedDisp.dispenser_id.replace(/[_-]/g, ' ')}`,
+                hose: updatedDisp.nozzle || 1,
+                productId: updatedDisp.product_id || "GO2",
+                suctionTankId: updatedDisp.suction_tank_id || undefined,
+                status: updatedDisp.status || "available",
+                lastSaleLiters: updatedDisp.last_sale_liters || 0,
+                lastSaleAmount: updatedDisp.last_sale_amount || 0,
+                activeDriver: updatedDisp.driver || undefined,
+                activeVehicle: updatedDisp.vehicle || undefined,
+                activePlate: updatedDisp.plate || undefined,
+                odometerReading: updatedDisp.odometer || undefined,
+                authorizationMethod: updatedDisp.authorization_method || "RFID",
+                lastUpdated: dispPayload.received_at || new Date().toISOString(),
+                createdAt: dispPayload.received_at || new Date().toISOString()
+              };
+              clientDb.dispensers.push(dispObj);
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed fallback fetch of latest dispenser status inside fetchAllData", e);
     }
     
     return clientDb;

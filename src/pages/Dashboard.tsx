@@ -448,10 +448,14 @@ export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProp
         <div className="bento-box flex flex-col justify-center">
           <p className="text-[10.5px] text-slate-450 font-bold uppercase tracking-wider">Transacciones Activas</p>
           <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-3xl font-extrabold text-teal-600 tracking-tight font-mono">{activeDispensersCount}</span>
+            <span className="text-3xl font-extrabold text-teal-600 tracking-tight font-mono">
+              {activeDispensersCount} <span className="text-sm font-medium text-slate-500">de</span> {dispensers.length}
+            </span>
             <span className="text-xs text-slate-400 font-bold uppercase">Surtidores</span>
           </div>
-          <div className="text-[9.5px] text-slate-400 font-semibold block mt-2">Consumo diario prom: {averageDailyRate} L/día</div>
+          <div className="text-[9.5px] text-slate-400 font-semibold block mt-2">
+            Consumo promedio: {averageDailyRate} L/día • {dispensers.length > 0 ? "Vínculo ESP32 OK" : "Sin conexión"}
+          </div>
         </div>
 
       </div>
