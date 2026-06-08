@@ -66,7 +66,9 @@ export default function App() {
     reconciliations: [],
     alerts: [],
     devices: mockDevices,
-    users: mockUsers
+    users: mockUsers,
+    activeSiteName: 'Estación Norte',
+    activeSiteLocation: 'Ruta 9, Km 280, Rosario'
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -274,12 +276,56 @@ export default function App() {
             ? telRes.products 
             : prev.products;
 
+          let detectedSiteName = prev.activeSiteName || 'Estación Norte';
+          let detectedSiteLocation = prev.activeSiteLocation || 'Ruta 9, Km 280, Rosario';
+
+          if (telRes && telRes.ok) {
+            if (telRes.data?.site_name && telRes.data.site_name.trim() !== '') {
+              detectedSiteName = telRes.data.site_name;
+            } else if (telRes.site_name && telRes.site_name.trim() !== '') {
+              detectedSiteName = telRes.site_name;
+            }
+
+            if (telRes.data?.site_location && telRes.data.site_location.trim() !== '') {
+              detectedSiteLocation = telRes.data.site_location;
+            } else if (telRes.site_location && telRes.site_location.trim() !== '') {
+              detectedSiteLocation = telRes.site_location;
+            }
+
+            const telemetries = telRes.tanks && Array.isArray(telRes.tanks) 
+              ? telRes.tanks 
+              : telRes.data 
+                ? [telRes.data] 
+                : [];
+            
+            telemetries.forEach((t: any) => {
+              if (t.site_name && t.site_name.trim() !== '') {
+                detectedSiteName = t.site_name;
+              }
+              if (t.site_location && t.site_location.trim() !== '') {
+                detectedSiteLocation = t.site_location;
+              }
+            });
+          }
+
+          if (dispRes && dispRes.ok && dispRes.data) {
+            const dispPayload = dispRes.data;
+            if (dispPayload.site_name && dispPayload.site_name.trim() !== '') {
+              detectedSiteName = dispPayload.site_name;
+            }
+            if (dispPayload.site_location && dispPayload.site_location.trim() !== '') {
+              detectedSiteLocation = dispPayload.site_location;
+            }
+          }
+
           return {
             ...prev,
             tanks: updatedTanks,
             dispensers: updatedDispensers,
             alerts: updatedAlerts,
-            products: updatedProducts
+            products: updatedProducts,
+            activeSiteName: detectedSiteName,
+            activeSiteLocation: detectedSiteLocation
           };
         });
       } catch (err) {
@@ -538,7 +584,7 @@ export default function App() {
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-4">
-              <h1 className="text-md font-bold text-slate-900 hidden md:block">Centro de Operaciones: Estación Norte</h1>
+              <h1 className="text-md font-bold text-slate-900 hidden md:block">Centro de Operaciones: {data.activeSiteName || 'Estación Norte'}</h1>
               <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Sistema Estable
               </span>

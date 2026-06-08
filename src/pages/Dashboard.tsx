@@ -366,8 +366,10 @@ export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProp
       {/* Upper Status Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Centro de Operaciones: Estación Norte</h1>
-          <p className="text-xs text-slate-500">Resumen operativo general de combustible de tanques, surtidores y flotas en tiempo real.</p>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Centro de Operaciones: {data.activeSiteName || 'Estación Norte'}</h1>
+          <p className="text-xs text-slate-500">
+            {data.activeSiteLocation ? `${data.activeSiteLocation} • ` : ''}Resumen operativo general de combustible de tanques, surtidores y flotas en tiempo real.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-xs text-teal-700 bg-teal-50 px-3 py-1 rounded-full font-bold uppercase tracking-wider">
