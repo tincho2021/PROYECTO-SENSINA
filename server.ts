@@ -730,13 +730,14 @@ async function startServer() {
 
     // Fallback static list matching mock data
     const driversDb = [
-      { id: 'DRV-001', name: 'Martin Rodriguez' },
-      { id: 'DRV-002', name: 'Federico Villagra' },
-      { id: 'DRV-003', name: 'María Rodríguez' },
-      { id: 'DRV-004', name: 'Juan Carlos Ortiz' },
-      { id: 'DRV-005', name: 'Esteban Benítez' },
-      { id: 'DRV-006', name: 'Patricia Gómez' },
-      { id: 'DRV-007', name: 'Carlos Peralta' }
+      { id: 'DRV-001', name: 'Juan Pérez', rfid_card: 'RFID-9843-01' },
+      { id: 'DRV-002', name: 'Carlos Gómez', rfid_card: 'RFID-1243-02' },
+      { id: 'DRV-003', name: 'María Rodríguez', rfid_card: 'RFID-4512-03' },
+      { id: 'DRV-004', name: 'Federico Villagra', rfid_card: 'RFID-1100-04' },
+      { id: 'DRV-005', name: 'Leandro Mercado', rfid_card: 'RFID-7711-05' },
+      { id: 'DRV-006', name: 'Mariano Altuna', rfid_card: 'RFID-5522-06' },
+      { id: 'DRV-007', name: 'Guillermo Ortelli', rfid_card: 'RFID-8833-07' },
+      { id: 'DRV-008', name: 'Christian Ledesma', rfid_card: 'RFID-9944-08' }
     ];
 
     const found = driversDb.find(d => 
@@ -759,7 +760,9 @@ async function startServer() {
     const dbMatch = db.vehicles.find(v =>
       v.id.toLowerCase() === val ||
       v.plate.toLowerCase().replace(/[^a-z0-9]/g, '') === val.replace(/[^a-z0-9]/g, '') ||
-      (v.brand + " " + v.model).toLowerCase().includes(val)
+      (v.brand + " " + v.model).toLowerCase().includes(val) ||
+      val.includes((v.brand + " " + v.model).toLowerCase()) ||
+      val.includes(v.model.toLowerCase())
     );
     if (dbMatch) {
       return { id: dbMatch.id, plate: dbMatch.plate };
@@ -767,19 +770,22 @@ async function startServer() {
 
     // Fallback static list matching mock data
     const vehiclesDb = [
-      { id: 'VEH-001', plate: 'AA-510-ZZ', model: 'Hilux', brand: 'Toyota' },
-      { id: 'VEH-002', plate: 'AF-112-OP', model: 'Ranger', brand: 'Ford' },
-      { id: 'VEH-003', plate: 'AA-450-XX', model: 'R450 Heavy', brand: 'Scania' },
-      { id: 'VEH-004', plate: 'AE-321-LL', model: 'Constellation', brand: 'Volkswagen' },
-      { id: 'VEH-005', plate: 'AG-987-YY', model: 'Daily', brand: 'Iveco' },
-      { id: 'VEH-006', plate: 'AD-456-WW', model: 'F-100', brand: 'Ford' },
-      { id: 'VEH-007', plate: 'AB-123-CD', model: 'Sprinter', brand: 'Mercedes-Benz' }
+      { id: 'VEH-001', plate: 'AB-123-CD', brand: 'Toyota', model: 'Hilux 4x4' },
+      { id: 'VEH-002', plate: 'AD-892-JJ', brand: 'Ford', model: 'Ranger Raptor' },
+      { id: 'VEH-003', plate: 'GEN-01-IND', brand: 'Caterpillar', model: 'CAT-3512' },
+      { id: 'VEH-004', plate: 'AA-450-XX', brand: 'Scania', model: 'R450 Heavy' },
+      { id: 'VEH-005', plate: 'AA-510-ZZ', brand: 'Mercedes-Benz', model: 'Actros 2651' },
+      { id: 'VEH-006', plate: 'AE-320-MM', brand: 'John Deere', model: '8345R' },
+      { id: 'VEH-007', plate: 'AF-710-DD', brand: 'Iveco', model: 'Stralis 600' },
+      { id: 'VEH-008', plate: 'AG-912-BB', brand: 'Chevrolet', model: 'S10 CD' }
     ];
 
     const found = vehiclesDb.find(v =>
       v.id.toLowerCase() === val ||
       v.plate.toLowerCase().replace(/[^a-z0-9]/g, '') === val.replace(/[^a-z0-9]/g, '') ||
-      (v.brand + " " + v.model).toLowerCase().includes(val)
+      (v.brand + " " + v.model).toLowerCase().includes(val) ||
+      val.includes((v.brand + " " + v.model).toLowerCase()) ||
+      val.includes(v.model.toLowerCase())
     );
 
     if (found) {
