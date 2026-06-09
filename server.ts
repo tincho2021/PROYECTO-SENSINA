@@ -783,7 +783,7 @@ async function startServer() {
         const hasDupe = db.transactions.some(tx => 
           tx.dispenserId === d.dispenser_id && 
           Number(tx.liters) === Number(d.last_sale_liters) && 
-          Math.abs(new Date(tx.createdAt || tx.timestampEnd || Date.now()).getTime() - Date.now()) < 45000
+          Math.abs(new Date(tx.createdAt || tx.timestampEnd || Date.now()).getTime() - Date.now()) < 120000
         );
 
         if (!hasTx && !hasDupe) {
@@ -901,6 +901,46 @@ async function startServer() {
 
     if (!dispenser_id || !liters || !product_id) {
       return res.status(400).json({ error: 'Missing dispenser_id, product_id, or liters in transaction packet' });
+    }
+
+    // Check for duplicate fuel transactions to prevent repeated entries on retries, packet lags or double clicks
+    let existingTx = null;
+
+    if (transaction_id) {
+      existingTx = db.transactions.find(tx => tx.id === transaction_id);
+    }
+
+    if (!existingTx) {
+      const matchLiters = Number(liters);
+      existingTx = db.transactions.find(tx => {
+        const isSameDispenser = tx.dispenserId === dispenser_id;
+        const isSameProduct = tx.productId === product_id || 
+                              (product_id === 'GO3' && tx.productId === 'GP') ||
+                              (product_id === 'GP' && tx.productId === 'GO3');
+        const isSameLiters = Math.abs(Number(tx.liters) - matchLiters) < 0.01;
+        const isSamePlate = tx.vehiclePlate === vehicle_plate || 
+                            (!tx.vehiclePlate && !vehicle_plate) ||
+                            (tx.vehiclePlate === "SIN-PAT" && vehicle_plate === "SIN-PAT") ||
+                            (tx.vehiclePlate === "AB123CD" && vehicle_plate === "AB123CD");
+        
+        if (isSameDispenser && isSameProduct && isSameLiters && isSamePlate) {
+          // Check time difference (less than 120 seconds / 2 minutes) using transaction timestamps
+          const txTime = new Date(tx.createdAt || tx.timestampEnd || Date.now()).getTime();
+          const timeDiffSeconds = Math.abs(Date.now() - txTime) / 1000;
+          return timeDiffSeconds < 120;
+        }
+        return false;
+      });
+    }
+
+    if (existingTx) {
+      console.log(`[C.E.S.T.I. DEDUPLICADOR STABLE] Evitada salida duplicada de manguera: ${existingTx.id} (Dispensero: ${dispenser_id}, Litros: ${liters}L, Patente: ${vehicle_plate || 'Sin ident.'})`);
+      return res.json({ 
+        success: true, 
+        message: 'Transaction already processed (duplicate entry avoided)', 
+        transaction: existingTx,
+        duplicate: true 
+      });
     }
 
     // 1. Log transaction

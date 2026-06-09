@@ -181,7 +181,7 @@ exports.handler = async (event, context) => {
       const hasDupe = transactionsList.some(tx => 
         tx.dispenser_id === d.dispenser_id && 
         Number(tx.liters) === Number(d.last_sale_liters) && 
-        Math.abs(new Date(tx.timestamp_end || tx.received_at || received_at).getTime() - new Date(received_at).getTime()) < 45000
+        Math.abs(new Date(tx.timestamp_end || tx.received_at || received_at).getTime() - new Date(received_at).getTime()) < 120000
       );
 
       if (!hasTx && !hasDupe) {
