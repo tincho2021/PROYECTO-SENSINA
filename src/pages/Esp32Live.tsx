@@ -18,7 +18,9 @@ import {
   Check,
   Signal,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  FileDown,
+  ExternalLink
 } from 'lucide-react';
 import { fetchLatestTelemetry } from '../services/telemetryService';
 import { TelemetryPayload } from '../types';
@@ -976,6 +978,89 @@ export default function Esp32Live() {
             <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
             REFRESCAR LECTURA
           </button>
+        </div>
+      </div>
+
+      {/* Recursos de Documentación y API JSON en Vivo */}
+      <div className="bg-slate-900 text-white p-6 rounded-2xl border border-slate-800 shadow-lg relative overflow-hidden">
+        {/* Decoración orbital sutil */}
+        <div className="absolute right-0 top-0 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+        <div className="relative z-10 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <span className="text-[10px] font-black text-teal-400 uppercase tracking-widest block">
+                Centro de Descargas y APIs en Vivo
+              </span>
+              <h2 className="text-lg font-black uppercase tracking-tight text-white mt-1">
+                Documentación Técnica & Consultas JSON
+              </h2>
+              <p className="text-xs text-slate-400 max-w-2xl mt-1 leading-relaxed">
+                Obtenga el manual formal de APIs de conciliación y control en formato PDF o consulte de manera instantánea el formato de las salidas JSON reales de los endpoints de telemedición y flota autorizada.
+              </p>
+            </div>
+            <a
+              href={`${customServerBase}/api/docs/pdf`}
+              target="_blank"
+              rel="noreferrer"
+              className="cursor-pointer flex items-center justify-center gap-2 bg-teal-650 hover:bg-teal-700 text-white font-extrabold uppercase text-xs px-5 py-3 rounded-xl shadow-md transition-all whitespace-nowrap"
+            >
+              <FileDown className="w-4 h-4" />
+              DESCARGAR MANUAL PDF
+            </a>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 border-t border-slate-800 pt-4">
+            {/* Link 1 */}
+            <a
+              href={fleetUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-between p-3 bg-slate-850 hover:bg-slate-800 border border-slate-800 rounded-xl transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <Database className="w-4 h-4 text-teal-400" />
+                <div>
+                  <span className="text-[10.5px] font-bold text-slate-300 block uppercase">JSON Flota Activa</span>
+                  <span className="text-[9.5px] font-mono text-slate-500">/api/fleet</span>
+                </div>
+              </div>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-teal-400 duration-150 transition-all" />
+            </a>
+
+            {/* Link 2 */}
+            <a
+              href={`${customServerBase}/api/latest-telemetry`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-between p-3 bg-slate-850 hover:bg-slate-800 border border-slate-800 rounded-xl transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <Database className="w-4 h-4 text-teal-400" />
+                <div>
+                  <span className="text-[10.5px] font-bold text-slate-300 block uppercase">JSON Telemediciones</span>
+                  <span className="text-[9.5px] font-mono text-slate-500">/api/latest-telemetry</span>
+                </div>
+              </div>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-teal-400 duration-150 transition-all" />
+            </a>
+
+            {/* Link 3 */}
+            <a
+              href={`${customServerBase}/api/all-data`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-between p-3 bg-slate-850 hover:bg-slate-800 border border-slate-800 rounded-xl transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <Database className="w-4 h-4 text-teal-400" />
+                <div>
+                  <span className="text-[10.5px] font-bold text-slate-300 block uppercase">Ver Base Completa</span>
+                  <span className="text-[9.5px] font-mono text-slate-500">/api/all-data</span>
+                </div>
+              </div>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-teal-400 duration-150 transition-all" />
+            </a>
+          </div>
         </div>
       </div>
 

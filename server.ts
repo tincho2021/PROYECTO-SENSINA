@@ -7,6 +7,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import PDFDocument from 'pdfkit';
 
 // Direct initial state from mockData structures
 import {
@@ -133,6 +134,310 @@ async function startServer() {
       ok: true,
       data: latestAlarmsData
     });
+  });
+
+  // --- PDF DOCUMENTATION GENERATOR ---
+  app.get('/api/docs/pdf', (req, res) => {
+    try {
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename="MANUAL_SENSINA_CESTI_INTEGRACION.pdf"');
+
+      doc.pipe(res);
+
+      // Colors
+      const primaryColor = '#0d9488'; // Teal-600
+      const secondaryColor = '#0f172a'; // Slate-900
+      const lightBgColor = '#f8fafc'; // Slate-50
+      const accentColor = '#3b82f6'; // Blue-500
+      const dividerColor = '#cbd5e1'; // Slate-300
+      const codeBgColor = '#0f172a';
+      const codeTextColor = '#10b981';
+
+      // --- PAGE 1: PORTADA & INTRODUCCIÓN ---
+      // Border decoration
+      doc.rect(20, 20, doc.page.width - 40, doc.page.height - 40)
+         .lineWidth(1)
+         .stroke('#e2e8f0');
+
+      // Top Header
+      doc.fillColor(primaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(10)
+         .text('SENSINA® INDUSTRIAL IOT / C.E.S.T.I. FLOTA', 40, 40);
+
+      // Title
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(22)
+         .text('MANUAL DE INTEGRACIÓN DE APIS', 40, 80, { lineGap: 6 });
+
+      doc.fillColor(primaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(14)
+         .text('Sincronización de Conciliación de Telemedición, Surtidores, Choferes y Vehículos por Sonda Externa (ESP32)', 40, 130, { width: doc.page.width - 80 });
+
+      // Horizontal bar
+      doc.moveTo(40, 190)
+         .lineTo(doc.page.width - 40, 190)
+         .lineWidth(3)
+         .stroke(primaryColor);
+
+      // Metadata block
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(10)
+         .text('Versión de API:', 40, 210)
+         .font('Helvetica')
+         .text('v2.1.4-Production Stable (SSL Secure)', 130, 210)
+         .font('Helvetica-Bold')
+         .text('Sede de Enlace:', 40, 225)
+         .font('Helvetica')
+         .text('ROSARIO-01, Santa Fe, Argentina', 130, 225)
+         .font('Helvetica-Bold')
+         .text('Fecha Reporte:', 40, 240)
+         .font('Helvetica')
+         .text(new Date().toLocaleDateString('es-AR') + ' ' + new Date().toLocaleTimeString('es-AR'), 130, 240);
+
+      // Summary Panel
+      doc.rect(40, 270, doc.page.width - 80, 110)
+         .fill(lightBgColor);
+
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(11)
+         .text('SINOPSIS DEL SISTEMA REGLAMENTARIO:', 55, 285)
+         .font('Helvetica')
+         .fontSize(9.5)
+         .text('La plataforma de telemetría Sensina gestiona de manera unificada las sondas de medición capacitivas/magnetoestrictivas y el control de playón. Para garantizar la cero merma física y controlar fugas de combustible, el controlador de despacho (ESP32) concilia en tiempo real las mangueras habilitadas con la flota autorizada vía RFID. El presente manual detalla la estructura del endpoint central para consulta de flota local y describe cómo documentar lecturas térmicas directas y eventos transaccionales completos.', 55, 305, { width: doc.page.width - 110, align: 'justify', lineGap: 3 });
+
+      // Introduction
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(12)
+         .text('1. INTRODUCCIÓN Y ARQUITECTURA', 40, 400);
+
+      doc.fillColor(secondaryColor)
+         .font('Helvetica')
+         .fontSize(10)
+         .text('La telemedición automática (ATG) calcula de forma matemática el stock físico en base a la altura en milímetros de combustible y la densidad compensada por temperatura. Sin embargo, para cerrar la ecuación contable de conciliación, cada litro entregado por un surtidor debe poseer un chofer, patente de vehículo y odómetro asociado.\n\nCuando una manguera inicia flujo, el microcontrolador local (ESP32) consulta las bases de flota de Sensina, restringe el despacho según límites semanales de litros, y comunica de forma asincrónica las telemetrías e históricos de transacciones superando caídas de red local inalámbrica.', 40, 425, { width: doc.page.width - 80, align: 'justify', lineGap: 3 });
+
+      // Footnote
+      doc.fillColor('#64748b')
+         .font('Helvetica')
+         .fontSize(8)
+         .text('Sensina Cloud IoT Platform - Manual del Desarrollador - Página 1 de 3', 40, doc.page.height - 40, { align: 'center' });
+
+
+      // --- PAGE 2: ENDPOINTS DE FLOTA Y TELEMETRÍA ---
+      doc.addPage();
+
+      // Border decoration
+      doc.rect(20, 20, doc.page.width - 40, doc.page.height - 40)
+         .lineWidth(1)
+         .stroke('#e2e8f0');
+
+      doc.fillColor(primaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(10)
+         .text('MANUAL DE INTEGRACIÓN DE APIS SENSINA® / C.E.S.T.I.', 40, 40);
+
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(12)
+         .text('2. CONSULTA DE FLOTA AUTORIZADA (API FLEET)', 40, 60);
+
+      doc.fillColor(secondaryColor)
+         .font('Helvetica')
+         .fontSize(9.5)
+         .text('Para evitar problemas de latencia o desconexión transitoria en zonas de playón lejanas, el ESP32 descarga y almacena en caché local una estructura ultra-optimizada de choferes habilitados con sus respectivas tarjetas RFID. Esta información se obtiene consultando el siguiente endpoint con método GET:', 40, 80, { width: doc.page.width - 80, align: 'justify', lineGap: 2 });
+
+      // Endpoint box
+      doc.rect(40, 125, doc.page.width - 80, 25)
+         .fill('#f1f5f9');
+      doc.fillColor('#0f172a')
+         .font('Helvetica-Bold')
+         .fontSize(9.5)
+         .text('GET   /api/fleet', 55, 133);
+
+      doc.fillColor(secondaryColor)
+         .font('Helvetica')
+         .fontSize(9)
+         .text('La respuesta es un mapa JSON depurado del catálogo de vehículos y conductores habilitados:', 40, 165);
+
+      // JSON example box
+      const jsonFleetOutput = JSON.stringify({
+        ok: true,
+        count_drivers: 7,
+        count_vehicles: 7,
+        drivers: [
+          { id: "DRV-001", name: "Martin Rodriguez", rfid_card: "12345678", enabled_vehicles: ["VEH-001"], daily_limit_liters: 200 }
+        ],
+        vehicles: [
+          { id: "VEH-001", plate: "AE123BB", brand: "Toyota", model: "Hilux", tank_capacity_liters: 80 }
+        ]
+      }, null, 2);
+
+      doc.rect(40, 185, doc.page.width - 80, 130)
+         .fill(codeBgColor);
+      doc.fillColor(codeTextColor)
+         .font('Courier-Bold')
+         .fontSize(7.5)
+         .text(jsonFleetOutput, 50, 195, { lineGap: 1 });
+
+      // Telemetry Endpoint Section
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(12)
+         .text('3. RESPUESTA SENSORA DE TELEMETRÍA (API TELEMETRY)', 40, 335);
+
+      doc.font('Helvetica')
+         .fontSize(9.5)
+         .text('La sonda física transfiere de manera ininterrumpida variables críticas de estado. El microprocesador del tanque debe armar una petición POST incluyendo metadatos del combustible actual. Es obligatorio suministrar el token Bearer en las cabeceras HTTP.', 40, 355, { width: doc.page.width - 80, align: 'justify', lineGap: 2 });
+
+      // Endpoint box telemetry
+      doc.rect(40, 400, doc.page.width - 80, 25)
+         .fill('#f1f5f9');
+      doc.fillColor('#0f172a')
+         .font('Helvetica-Bold')
+         .fontSize(9.5)
+         .text('POST   /api/telemetry', 55, 408);
+
+      // Header Table of fields
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(9)
+         .text('Campo en JSON', 40, 440)
+         .text('Tipo', 170, 440)
+         .text('Descripción Reglamentaria', 250, 440);
+
+      doc.moveTo(40, 452).lineTo(doc.page.width - 40, 452).lineWidth(1).stroke(dividerColor);
+
+      let rowYPos = 460;
+      const fieldsList = [
+        { name: 'tank_id', type: 'String', desc: 'Identificador físico de cisterna (e.g. tank_01, TQ-01)' },
+        { name: 'volume_liters', type: 'Float', desc: 'Liters físicos calculados por aforo de densidad compensada.' },
+        { name: 'height_mm', type: 'Integer', desc: 'Altura de combustible registrada por sensor sónico, soga o flotador.' },
+        { name: 'temperature_c', type: 'Float', desc: 'Temperatura compensadora del combustible para aforo reglamentario.' },
+        { name: 'water_mm', type: 'Integer', desc: 'Presencia de agua libre en milímetros acumulada en fondo de fosa.' },
+        { name: 'battery_v', type: 'Float', desc: 'Nivel analógico de tensión de celda de batería del sensor (3.6 V).' },
+        { name: 'sensor_status', type: 'String', desc: 'Mapeo de alarmas físicas: normal, offline, water_alarm, low_battery.' }
+      ];
+
+      fieldsList.forEach(f => {
+        doc.fillColor(secondaryColor)
+           .font('Courier-Bold')
+           .fontSize(8.5)
+           .text(f.name, 40, rowYPos)
+           .font('Helvetica')
+           .text(f.type, 170, rowYPos)
+           .fontSize(8.5)
+           .text(f.desc, 250, rowYPos, { width: doc.page.width - 290 });
+        rowYPos += 18;
+      });
+
+      // Footnote
+      doc.fillColor('#64748b')
+         .font('Helvetica')
+         .fontSize(8)
+         .text('Sensina Cloud IoT Platform - Manual del Desarrollador - Página 2 de 3', 40, doc.page.height - 40, { align: 'center' });
+
+
+      // --- PAGE 3: CONCILIACIÓN, GURÚ PANIC FIXED & RECOMENDACIONES ---
+      doc.addPage();
+
+      // Border decoration
+      doc.rect(20, 20, doc.page.width - 40, doc.page.height - 40)
+         .lineWidth(1)
+         .stroke('#e2e8f0');
+
+      doc.fillColor(primaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(10)
+         .text('MANUAL DE INTEGRACIÓN DE APIS SENSINA® / C.E.S.T.I.', 40, 40);
+
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(12)
+         .text('4. RESOLUCIÓN DE GURU MEDITATION PANIC (GESTIÓN DE MEMORIA)', 40, 60);
+
+      // Box explanation of the Guru panic
+      doc.rect(40, 80, doc.page.width - 80, 160)
+         .fill('#fef2f2')
+         .stroke('#fca5a5');
+
+      doc.fillColor('#991b1b')
+         .font('Helvetica-Bold')
+         .fontSize(10)
+         .text('REPORTE DE INCIDENCIA CRÍTICA: GURU MEDITATION PANIC EN CORE 1', 50, 95)
+         .font('Helvetica')
+         .fontSize(9)
+         .fillColor('#7f1d1d')
+         .text('Síntoma: El ESP32 se reinicia abruptamente lanzando un pánico del procesador ("InstructionFetchError" o "StackOverflow") tras recibir el JSON de sincronización que contiene una alta densidad de choferes y vehículos habilitados.\n\nCausa estructural: Al declarar una variable de ArduinoJson del tipo "DynamicJsonDocument doc(12000)" en el Stack local dentro de la rutina de sincronización, la memoria del hilo del sistema colapsa debido a que supera el espacio reservado para pilas en FreeRTOS.\n\nSolución implementada y validada en código:', 50, 115, { width: doc.page.width - 100, lineGap: 3 })
+         .font('Helvetica-Bold')
+         .text('Para evitar fallar en la pila (Stack), el objeto JSON se aloja en el Heap mediante punteros dinámicos:\n"DynamicJsonDocument* doc = new DynamicJsonDocument(16384);"\ny es inmediatamente liberado de la RAM del ESP32 una vez concluido el procesado de las matrices:\n"delete doc;"', 50, 195, { width: doc.page.width - 100, lineGap: 2.5 });
+
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(12)
+         .text('5. REGISTRO DE DESPACHO & TRANSACCIONES (API FUEL TRANSACTIONS)', 40, 260);
+
+      doc.font('Helvetica')
+         .fontSize(9.5)
+         .text('Cada vez que una manguera finaliza de expender litros, el ESP32 envía un reporte transaccional completo. El backend Sensina de forma simultánea realiza las siguientes acciones de conciliación de forma segura:', 40, 280, { width: doc.page.width - 80, align: 'justify', lineGap: 2 });
+
+      // Bullets of actions
+      const bulletPointsList = [
+        { title: 'Descuento Físico', desc: 'Resta exactamente los litros despachados de la cisterna vinculada por succión, de forma continua.' },
+        { title: 'Mapeo Multidispositivo', desc: 'Guarda la patente, conductor, método RFID y el odómetro analizado en las planillas de transacciones.' },
+        { title: 'Generación de Alarma de Merma', desc: 'Si el combustible descontado por el surtidor no se condice con el descenso registrado por la sonda sónica (ATG), se emite automáticamente una alerta de pérdida física, robo o descalibración del caudalímetro del surtidor.' }
+      ];
+
+      let bulletYPos = 325;
+      bulletPointsList.forEach(bp => {
+        doc.fillColor(primaryColor)
+           .font('Helvetica-Bold')
+           .fontSize(14)
+           .text('•', 40, bulletYPos)
+           .fillColor(secondaryColor)
+           .font('Helvetica-Bold')
+           .fontSize(9.5)
+           .text(bp.title + ':', 55, bulletYPos + 3)
+           .font('Helvetica')
+           .text(bp.desc, 150, bulletYPos + 3, { width: doc.page.width - 190, align: 'justify' });
+        bulletYPos += bp.title === 'Generación de Alarma de Merma' ? 38 : 28;
+      });
+
+      // Epilogue
+      doc.fillColor(secondaryColor)
+         .font('Helvetica-Bold')
+         .fontSize(11)
+         .text('ASISTENCIA TÉCNICA SENSINA IOT', 40, 440);
+
+      doc.font('Helvetica')
+         .fontSize(9)
+         .text('Si tiene dudas sobre las calibraciones térmicas del aforo o requiere soporte para la integración del bus de comunicaciones RS485 (PAM / Gilbarco / Wayne), contáctese con el Centro de Servicios al Desarrollador del C.E.S.T.I. al correo martinrodriguezmelgarejo@gmail.com o acceda a la plataforma en vivo.', 40, 458, { width: doc.page.width - 80, align: 'justify', lineGap: 2 });
+
+      // Signature badge
+      doc.rect(40, 520, doc.page.width - 80, 25)
+         .fill(primaryColor);
+      doc.fillColor('#ffffff')
+         .font('Helvetica-Bold')
+         .fontSize(9.5)
+         .text('CONEXIÓN REGLAMENTARIA ESTABLECIDA - CLOUD READY SSL v3', 80, 528, { align: 'center' });
+
+      // Footnote
+      doc.fillColor('#64748b')
+         .font('Helvetica')
+         .fontSize(8)
+         .text('Sensina Cloud IoT Platform - Manual del Desarrollador - Página 3 de 3', 40, doc.page.height - 40, { align: 'center' });
+
+      doc.end();
+    } catch (e: any) {
+      console.error('Error generating documentation PDF:', e);
+      res.status(500).send('Error generating PDF documentation: ' + e.message);
+    }
   });
 
   // GET /api/fleet
