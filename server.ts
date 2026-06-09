@@ -83,15 +83,244 @@ async function startServer() {
   let latestDispenserStatusData: any = null;
   let latestAlarmsData: any[] = [];
 
+  // Sync state with the shared global KVDB.io bucket
+  async function syncWithSharedKvdb() {
+    try {
+      const bucket = "7b3mwrCjYKfthbbugjqh4k";
+      
+      // 1. Sync tanks
+      try {
+        const res = await fetch(`https://kvdb.io/${bucket}/registered-tanks`);
+        if (res.ok) {
+          const tanksData = await res.json();
+          if (Array.isArray(tanksData)) {
+            tanksData.forEach((kvTank: any) => {
+              const incomingId = kvTank.tank_id || kvTank.id;
+              if (!incomingId) return;
+
+              // Resolve target DB tank ID
+              let targetId = incomingId;
+              if (incomingId === 'tank_01' || incomingId === 'tank_1') {
+                targetId = 'TQ-02';
+              } else if (incomingId === 'tank_02' || incomingId === 'tank_2') {
+                targetId = 'TQ-01';
+              } else if (incomingId === 'tank_03' || incomingId === 'tank_3') {
+                targetId = 'TQ-03';
+              }
+
+              let pId = kvTank.product_id;
+              if (pId === 'GO3' || pId === 'premium') pId = 'GP';
+              else if (pId === 'nafta') pId = 'NS';
+              else if (pId === 'gasoil') pId = 'GO2';
+
+              let localTank = db.tanks.find(t => t.id === targetId);
+              if (localTank) {
+                if (pId) localTank.productId = pId;
+                localTank.currentVolumeLiters = kvTank.volume_liters ?? kvTank.currentVolumeLiters ?? localTank.currentVolumeLiters;
+                localTank.currentHeightMm = kvTank.height_mm ?? kvTank.currentHeightMm ?? localTank.currentHeightMm;
+                localTank.temperatureC = kvTank.temperature_c ?? kvTank.temperatureC ?? localTank.temperatureC;
+                localTank.waterMm = kvTank.water_mm ?? kvTank.waterMm ?? localTank.waterMm;
+                localTank.batteryV = kvTank.battery_v ?? kvTank.batteryV ?? localTank.batteryV;
+                localTank.batteryPercent = kvTank.battery_percent ?? kvTank.batteryPercent ?? localTank.batteryPercent;
+                localTank.signalRssi = kvTank.signal_rssi ?? kvTank.signalRssi ?? localTank.signalRssi;
+                localTank.sensorStatus = kvTank.sensor_status ?? kvTank.sensorStatus ?? localTank.sensorStatus;
+                localTank.lastUpdated = kvTank.received_at || kvTank.lastUpdated || new Date().toISOString();
+              } else {
+                db.tanks.push({
+                  id: targetId,
+                  siteId: kvTank.site_id || "rosario-01",
+                  productId: pId || "GO2",
+                  name: kvTank.tank_name || `Cisterna Sonda ${incomingId}`,
+                  capacityLiters: kvTank.capacity_liters || 20000,
+                  heightMm: kvTank.height_mm ? Math.max(Number(kvTank.height_mm), 2000) : 2000,
+                  currentVolumeLiters: Number(kvTank.volume_liters || 0),
+                  currentHeightMm: Number(kvTank.height_mm || 0),
+                  temperatureC: Number(kvTank.temperature_c ?? 15),
+                  waterMm: Number(kvTank.water_mm ?? 0),
+                  batteryV: Number(kvTank.battery_v ?? 3.6),
+                  batteryPercent: Number(kvTank.battery_percent ?? 100),
+                  signalRssi: Number(kvTank.signal_rssi ?? -60),
+                  sensorStatus: kvTank.sensor_status || 'normal',
+                  sensorType: 'magnetostrictive',
+                  lastUpdated: kvTank.received_at || new Date().toISOString(),
+                  createdAt: new Date().toISOString()
+                } as any);
+              }
+            });
+          }
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching tanks from KVDB:", e?.message || e);
+      }
+
+      // 2. Sync products
+      try {
+        const res = await fetch(`https://kvdb.io/${bucket}/registered-products`);
+        if (res.ok) {
+          const prodData = await res.json();
+          if (Array.isArray(prodData)) {
+            prodData.forEach((kvProd: any) => {
+              if (!kvProd.id) return;
+              let localProd = db.products.find(p => p.id === kvProd.id);
+              if (localProd) {
+                localProd.name = kvProd.name ?? localProd.name;
+                localProd.type = kvProd.type ?? localProd.type;
+                localProd.referenceDensity = kvProd.referenceDensity ?? localProd.referenceDensity;
+                localProd.color = kvProd.color ?? localProd.color;
+                localProd.hexColor = kvProd.hexColor ?? localProd.hexColor;
+                localProd.pricePerLiter = kvProd.pricePerLiter ?? localProd.pricePerLiter;
+              } else {
+                db.products.push({
+                  id: kvProd.id,
+                  name: kvProd.name || `${kvProd.id} Combustible`,
+                  type: kvProd.type || 'gasoil',
+                  referenceDensity: Number(kvProd.referenceDensity || 840),
+                  color: kvProd.color || 'teal',
+                  hexColor: kvProd.hexColor || '#0ea5e9',
+                  pricePerLiter: Number(kvProd.pricePerLiter || 1200),
+                  minStock: kvProd.minStock || 2000,
+                  maxStock: kvProd.maxStock || 40000,
+                  unit: kvProd.unit || 'L',
+                  active: kvProd.active ?? true,
+                  createdAt: kvProd.createdAt || new Date().toISOString()
+                } as any);
+              }
+            });
+          }
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching products from KVDB:", e?.message || e);
+      }
+
+      // 3. Sync dispenser-status
+      try {
+        const res = await fetch(`https://kvdb.io/${bucket}/latest-dispenser-status`);
+        if (res.ok) {
+          const dData = await res.json();
+          if (dData && Array.isArray(dData.dispensers)) {
+            latestDispenserStatusData = dData;
+            dData.dispensers.forEach((kvDisp: any) => {
+              if (!kvDisp.dispenser_id) return;
+              let localDisp = db.dispensers.find(d => d.id === kvDisp.dispenser_id);
+              if (localDisp) {
+                localDisp.status = kvDisp.status ?? localDisp.status;
+                localDisp.lastSaleLiters = kvDisp.last_sale_liters ?? localDisp.lastSaleLiters;
+                localDisp.lastSaleAmount = kvDisp.last_sale_amount ?? localDisp.lastSaleAmount;
+                localDisp.activeDriver = kvDisp.driver ?? localDisp.activeDriver;
+                localDisp.activeVehicle = kvDisp.vehicle ?? localDisp.activeVehicle;
+                localDisp.activePlate = kvDisp.plate ?? localDisp.activePlate;
+                localDisp.odometerReading = kvDisp.odometer ?? localDisp.odometerReading;
+                localDisp.authorizationMethod = kvDisp.authorization_method ?? localDisp.authorizationMethod;
+                localDisp.lastUpdated = dData.received_at || new Date().toISOString();
+              } else {
+                db.dispensers.push({
+                  id: kvDisp.dispenser_id,
+                  siteId: dData.site_id || "rosario-01",
+                  name: `Surtidor ${kvDisp.dispenser_id.replace(/[_-]/g, ' ')}`,
+                  hose: Number(kvDisp.nozzle || kvDisp.hose_id || 1),
+                  productId: kvDisp.product_id || "GO2",
+                  suctionTankId: kvDisp.suction_tank_id || undefined,
+                  status: kvDisp.status || 'available',
+                  lastSaleLiters: Number(kvDisp.last_sale_liters || 0),
+                  lastSaleAmount: Number(kvDisp.last_sale_amount || 0),
+                  activeDriver: kvDisp.driver || undefined,
+                  activeVehicle: kvDisp.vehicle || undefined,
+                  activePlate: kvDisp.plate || undefined,
+                  odometerReading: kvDisp.odometer || undefined,
+                  authorizationMethod: kvDisp.authorization_method || 'RFID',
+                  lastUpdated: dData.received_at || new Date().toISOString(),
+                  createdAt: new Date().toISOString()
+                } as any);
+              }
+            });
+          }
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching dispensers from KVDB:", e?.message || e);
+      }
+
+      // 4. Sync fuel-transactions
+      try {
+        const res = await fetch(`https://kvdb.io/${bucket}/latest-fuel-transactions`);
+        if (res.ok) {
+          const txData = await res.json();
+          if (Array.isArray(txData)) {
+            latestFuelTransactionsData = txData;
+            txData.forEach((kvTx: any) => {
+              const txId = kvTx.transaction_id || kvTx.id;
+              if (!txId) return;
+
+              const exists = db.transactions.some(t => t.id === txId);
+              if (!exists) {
+                const newTx = {
+                  id: txId,
+                  siteId: kvTx.site_id || "rosario-01",
+                  dispenserId: kvTx.dispenser_id,
+                  hose: Number(kvTx.nozzle || kvTx.hose_id || 1),
+                  productId: kvTx.product_id || "GO2",
+                  liters: Number(kvTx.liters),
+                  amount: Number(kvTx.amount),
+                  pricePerLiter: Number(kvTx.price_per_liter || 1200),
+                  driverId: kvTx.driver_id || "DRV-001",
+                  vehicleId: kvTx.vehicle_id || "VEH-001",
+                  vehiclePlate: kvTx.vehicle_plate || kvTx.plate || "SIN-PAT",
+                  odometer: kvTx.odometer || 0,
+                  timestampStart: kvTx.timestamp_start || new Date().toISOString(),
+                  timestampEnd: kvTx.timestamp_end || new Date().toISOString(),
+                  authorizationMethod: kvTx.authorization_method || 'RFID',
+                  status: 'completed' as const,
+                  createdAt: kvTx.received_at || new Date().toISOString()
+                };
+                db.transactions.unshift(newTx);
+              }
+            });
+          }
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching transactions from KVDB:", e?.message || e);
+      }
+
+      // 5. Sync latest telemetry item under latestTelemetryData
+      try {
+        const res = await fetch(`https://kvdb.io/${bucket}/latest-telemetry`);
+        if (res.ok) {
+          const ltData = await res.json();
+          if (ltData && ltData.tank_id) {
+            latestTelemetryData = ltData;
+          }
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching latest telemetry from KVDB:", e?.message || e);
+      }
+
+      // 6. Sync latest alarms
+      try {
+        const res = await fetch(`https://kvdb.io/${bucket}/latest-alarms`);
+        if (res.ok) {
+          const laData = await res.json();
+          if (Array.isArray(laData)) {
+            latestAlarmsData = laData;
+          }
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching latest alarms from KVDB:", e?.message || e);
+      }
+    } catch (err: any) {
+      console.error("[C.E.S.T.I. SYNC] Shared KVDB sync completed with errors:", err?.message || err);
+    }
+  }
+
   // --- REST ENDPOINTS ---
 
   // Get full current live state (Frontend query)
-  app.get('/api/all-data', (req, res) => {
+  app.get('/api/all-data', async (req, res) => {
+    await syncWithSharedKvdb();
     res.json(db);
   });
 
   // Get latest telemetry endpoint compatible with Netlify
-  app.get('/api/latest-telemetry', (req, res) => {
+  app.get('/api/latest-telemetry', async (req, res) => {
+    await syncWithSharedKvdb();
     res.json({
       ok: true,
       data: latestTelemetryData,
@@ -115,21 +344,24 @@ async function startServer() {
     });
   });
 
-  app.get('/api/latest-fuel-transactions', (req, res) => {
+  app.get('/api/latest-fuel-transactions', async (req, res) => {
+    await syncWithSharedKvdb();
     res.json({
       ok: true,
       data: latestFuelTransactionsData
     });
   });
 
-  app.get('/api/latest-dispenser-status', (req, res) => {
+  app.get('/api/latest-dispenser-status', async (req, res) => {
+    await syncWithSharedKvdb();
     res.json({
       ok: true,
       data: latestDispenserStatusData
     });
   });
 
-  app.get('/api/latest-alarms', (req, res) => {
+  app.get('/api/latest-alarms', async (req, res) => {
+    await syncWithSharedKvdb();
     res.json({
       ok: true,
       data: latestAlarmsData
@@ -716,14 +948,48 @@ async function startServer() {
   // Helper functions to resolve driver and vehicle details from string IDs or names
   const lookupDriver = (driverVal: any) => {
     if (!driverVal) return { id: undefined, name: undefined };
-    const val = String(driverVal).trim().toLowerCase();
+    let val = String(driverVal).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
+    // Direct mapping bypass for known spelling variants / common inputs
+    if (val.includes("villagra") || val.includes("federico")) {
+      const target = db.drivers.find(d => d.id === 'DRV-004');
+      if (target) return { id: target.id, name: target.name };
+    }
+    if (val.includes("perez") || val.includes("juan")) {
+      const target = db.drivers.find(d => d.id === 'DRV-001');
+      if (target) return { id: target.id, name: target.name };
+    }
+    if (val.includes("gomez") || val.includes("carlos")) {
+      const target = db.drivers.find(d => d.id === 'DRV-002');
+      if (target) return { id: target.id, name: target.name };
+    }
+    if (val.includes("rodriguez") || val.includes("maria")) {
+      const target = db.drivers.find(d => d.id === 'DRV-003');
+      if (target) return { id: target.id, name: target.name };
+    }
+    if (val.includes("mercado") || val.includes("leandro")) {
+      const target = db.drivers.find(d => d.id === 'DRV-005');
+      if (target) return { id: target.id, name: target.name };
+    }
+    if (val.includes("altuna") || val.includes("mariano")) {
+      const target = db.drivers.find(d => d.id === 'DRV-006');
+      if (target) return { id: target.id, name: target.name };
+    }
+    if (val.includes("ortelli") || val.includes("guillermo")) {
+      const target = db.drivers.find(d => d.id === 'DRV-007');
+      if (target) return { id: target.id, name: target.name };
+    }
+    if (val.includes("ledesma") || val.includes("christian")) {
+      const target = db.drivers.find(d => d.id === 'DRV-008');
+      if (target) return { id: target.id, name: target.name };
+    }
+
     // Check against current database first if available
-    const dbMatch = db.drivers.find(d => 
-      d.id.toLowerCase() === val || 
-      d.name.toLowerCase() === val ||
-      d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === val.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    );
+    const dbMatch = db.drivers.find(d => {
+      const matchName = d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const matchId = d.id.toLowerCase();
+      return matchId === val || matchName === val || matchName.includes(val) || val.includes(matchName);
+    });
     if (dbMatch) {
       return { id: dbMatch.id, name: dbMatch.name };
     }
@@ -740,11 +1006,11 @@ async function startServer() {
       { id: 'DRV-008', name: 'Christian Ledesma', rfid_card: 'RFID-9944-08' }
     ];
 
-    const found = driversDb.find(d => 
-      d.id.toLowerCase() === val || 
-      d.name.toLowerCase() === val || 
-      d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === val.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    );
+    const found = driversDb.find(d => {
+      const mName = d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const mId = d.id.toLowerCase();
+      return mId === val || mName === val || mName.includes(val) || val.includes(mName);
+    });
 
     if (found) {
       return { id: found.id, name: found.name };
@@ -754,16 +1020,53 @@ async function startServer() {
 
   const lookupVehicle = (vehicleVal: any) => {
     if (!vehicleVal) return { id: undefined, plate: undefined };
-    const val = String(vehicleVal).trim().toLowerCase();
+    let val = String(vehicleVal).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    // Normalize commonly misspelled terms
+    val = val.replace('mercedez', 'mercedes').replace('mercede', 'mercedes');
+
+    // Direct mapping bypass for known vehicle models/brands or plates
+    if (val.includes("mercedes") || val.includes("actros") || val.includes("510") || val.includes("zz") || val.includes("aa-510-zz") || val.includes("aa510zz")) {
+      const target = db.vehicles.find(v => v.id === 'VEH-005');
+      if (target) return { id: target.id, plate: target.plate };
+    }
+    if (val.includes("scania") || val.includes("r450") || val.includes("450") || val.includes("xx") || val.includes("aa-440-xx") || val.includes("aa-450-xx") || val.includes("aa450xx")) {
+      const target = db.vehicles.find(v => v.id === 'VEH-004');
+      if (target) return { id: target.id, plate: target.plate };
+    }
+    if (val.includes("toyota") || val.includes("hilux") || val.includes("123") || val.includes("cd") || val.includes("ab-123-cd") || val.includes("ab123cd")) {
+      const target = db.vehicles.find(v => v.id === 'VEH-001');
+      if (target) return { id: target.id, plate: target.plate };
+    }
+    if (val.includes("ford") || val.includes("ranger") || val.includes("raptor") || val.includes("892") || val.includes("jj") || val.includes("ad-892-jj") || val.includes("ad892jj")) {
+      const target = db.vehicles.find(v => v.id === 'VEH-002');
+      if (target) return { id: target.id, plate: target.plate };
+    }
+    if (val.includes("caterpillar") || val.includes("cat") || val.includes("3512") || val.includes("gen-01-ind")) {
+      const target = db.vehicles.find(v => v.id === 'VEH-003');
+      if (target) return { id: target.id, plate: target.plate };
+    }
+    if (val.includes("deere") || val.includes("john") || val.includes("8345") || val.includes("ae-320-mm") || val.includes("ae320mm")) {
+      const target = db.vehicles.find(v => v.id === 'VEH-006');
+      if (target) return { id: target.id, plate: target.plate };
+    }
+    if (val.includes("iveco") || val.includes("stralis") || val.includes("710") || val.includes("dd") || val.includes("af-710-dd") || val.includes("af710dd")) {
+      const target = db.vehicles.find(v => v.id === 'VEH-007');
+      if (target) return { id: target.id, plate: target.plate };
+    }
+    if (val.includes("chevrolet") || val.includes("s10") || val.includes("912") || val.includes("bb") || val.includes("ag-912-bb") || val.includes("ag912bb")) {
+      const target = db.vehicles.find(v => v.id === 'VEH-008');
+      if (target) return { id: target.id, plate: target.plate };
+    }
 
     // Check against current database first if available
-    const dbMatch = db.vehicles.find(v =>
-      v.id.toLowerCase() === val ||
-      v.plate.toLowerCase().replace(/[^a-z0-9]/g, '') === val.replace(/[^a-z0-9]/g, '') ||
-      (v.brand + " " + v.model).toLowerCase().includes(val) ||
-      val.includes((v.brand + " " + v.model).toLowerCase()) ||
-      val.includes(v.model.toLowerCase())
-    );
+    const dbMatch = db.vehicles.find(v => {
+      const vId = v.id.toLowerCase();
+      const vPlateNoDashes = v.plate.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const vBrandModel = (v.brand + " " + v.model).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const cleanVal = val.replace(/[^a-z0-9]/g, '');
+      return vId === val || vPlateNoDashes === cleanVal || vBrandModel.includes(val) || val.includes(vBrandModel);
+    });
     if (dbMatch) {
       return { id: dbMatch.id, plate: dbMatch.plate };
     }
@@ -773,6 +1076,7 @@ async function startServer() {
       { id: 'VEH-001', plate: 'AB-123-CD', brand: 'Toyota', model: 'Hilux 4x4' },
       { id: 'VEH-002', plate: 'AD-892-JJ', brand: 'Ford', model: 'Ranger Raptor' },
       { id: 'VEH-003', plate: 'GEN-01-IND', brand: 'Caterpillar', model: 'CAT-3512' },
+      { id: 'VEH-003', plate: 'GEN-01-IND', brand: 'Caterpillar', model: 'CAT-3512' },
       { id: 'VEH-004', plate: 'AA-450-XX', brand: 'Scania', model: 'R450 Heavy' },
       { id: 'VEH-005', plate: 'AA-510-ZZ', brand: 'Mercedes-Benz', model: 'Actros 2651' },
       { id: 'VEH-006', plate: 'AE-320-MM', brand: 'John Deere', model: '8345R' },
@@ -780,17 +1084,24 @@ async function startServer() {
       { id: 'VEH-008', plate: 'AG-912-BB', brand: 'Chevrolet', model: 'S10 CD' }
     ];
 
-    const found = vehiclesDb.find(v =>
-      v.id.toLowerCase() === val ||
-      v.plate.toLowerCase().replace(/[^a-z0-9]/g, '') === val.replace(/[^a-z0-9]/g, '') ||
-      (v.brand + " " + v.model).toLowerCase().includes(val) ||
-      val.includes((v.brand + " " + v.model).toLowerCase()) ||
-      val.includes(v.model.toLowerCase())
-    );
+    const found = vehiclesDb.find(v => {
+      const vId = v.id.toLowerCase();
+      const vPlateNoDashes = v.plate.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const vBrandModel = (v.brand + " " + v.model).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const cleanVal = val.replace(/[^a-z0-9]/g, '');
+      return vId === val || vPlateNoDashes === cleanVal || vBrandModel.includes(val) || val.includes(vBrandModel);
+    });
 
     if (found) {
       return { id: found.id, plate: found.plate };
     }
+
+    // Try a direct exact plate check just in case
+    const exactPlate = db.vehicles.find(v => v.plate.toUpperCase() === String(vehicleVal).trim().toUpperCase());
+    if (exactPlate) {
+      return { id: exactPlate.id, plate: exactPlate.plate };
+    }
+
     return { id: "VEH-AUTO", plate: vehicleVal };
   };
 
