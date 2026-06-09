@@ -185,6 +185,50 @@ exports.handler = async (event, context) => {
       );
 
       if (!hasTx && !hasDupe) {
+        const lookupDriver = (driverVal) => {
+          if (!driverVal) return { id: undefined, name: undefined };
+          const val = String(driverVal).trim().toLowerCase();
+          const driversDb = [
+            { id: 'DRV-001', name: 'Martin Rodriguez' },
+            { id: 'DRV-002', name: 'Federico Villagra' },
+            { id: 'DRV-003', name: 'María Rodríguez' },
+            { id: 'DRV-004', name: 'Juan Carlos Ortiz' },
+            { id: 'DRV-005', name: 'Esteban Benítez' },
+            { id: 'DRV-006', name: 'Patricia Gómez' },
+            { id: 'DRV-007', name: 'Carlos Peralta' }
+          ];
+          const found = driversDb.find(drv => 
+            drv.id.toLowerCase() === val || 
+            drv.name.toLowerCase() === val ||
+            drv.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === val.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          );
+          if (found) return { id: found.id, name: found.name };
+          return { id: "DRV-AUTO", name: driverVal };
+        };
+
+        const lookupVehicle = (vehicleVal) => {
+          if (!vehicleVal) return { id: undefined, plate: undefined };
+          const val = String(vehicleVal).trim().toLowerCase();
+          const vehiclesDb = [
+            { id: 'VEH-001', plate: 'AA-510-ZZ', model: 'Hilux', brand: 'Toyota' },
+            { id: 'VEH-002', plate: 'AF-112-OP', model: 'Ranger', brand: 'Ford' },
+            { id: 'VEH-003', plate: 'AA-450-XX', model: 'R450 Heavy', brand: 'Scania' },
+            { id: 'VEH-004', plate: 'AE-321-LL', model: 'Constellation', brand: 'Volkswagen' },
+            { id: 'VEH-005', plate: 'AG-987-YY', model: 'Daily', brand: 'Iveco' },
+            { id: 'VEH-006', plate: 'AD-456-WW', model: 'F-100', brand: 'Ford' },
+            { id: 'VEH-007', plate: 'AB-123-CD', model: 'Sprinter', brand: 'Mercedes-Benz' }
+          ];
+          const found = vehiclesDb.find(v => 
+            v.id.toLowerCase() === val || 
+            v.plate.toLowerCase().replace(/[^a-z0-9]/g, '') === val.replace(/[^a-z0-9]/g, '')
+          );
+          if (found) return { id: found.id, plate: found.plate };
+          return { id: "VEH-AUTO", plate: vehicleVal };
+        };
+
+        const resolvedDrv = lookupDriver(d.driver);
+        const resolvedVeh = lookupVehicle(d.vehicle || d.plate);
+
         const autoTx = {
           transaction_id: txId,
           device_id: dispenserStatusRecord.device_id,
@@ -199,10 +243,10 @@ exports.handler = async (event, context) => {
           liters: d.last_sale_liters,
           amount: d.last_sale_amount || (d.last_sale_liters * 1200),
           price_per_liter: d.last_sale_amount ? Number((d.last_sale_amount / d.last_sale_liters).toFixed(2)) : 1200,
-          driver_id: d.driver ? "DRV-AUTO" : undefined,
-          driver_name: d.driver || "C.E.S.T.I. Chofer",
-          vehicle_id: d.vehicle ? "VEH-AUTO" : undefined,
-          vehicle_plate: d.plate || "SIN-PAT",
+          driver_id: resolvedDrv.id,
+          driver_name: resolvedDrv.name || d.driver || "C.E.S.T.I. Chofer",
+          vehicle_id: resolvedVeh.id,
+          vehicle_plate: resolvedVeh.plate || d.plate || "SIN-PAT",
           odometer: d.odometer || 0,
           authorization_method: d.authorization_method || "RFID",
           status: "completed",

@@ -24,7 +24,7 @@ interface ReportsProps {
 type ReportType = 'daily-stock' | 'monthly-consumption' | 'fleet-withdrawals' | 'reconciliation-discrepancies';
 
 export default function Reports({ data }: ReportsProps) {
-  const { tanks = [], transactions = [], products = [], reconciliations = [] } = data || {};
+  const { tanks = [], transactions = [], products = [], reconciliations = [], drivers = [] } = data || {};
   const [activeReport, setActiveReport] = useState<ReportType>('daily-stock');
   const [siteFilter, setSiteFilter] = useState('ALL');
   
@@ -236,7 +236,9 @@ export default function Reports({ data }: ReportsProps) {
                         <td className="py-2.5 px-3 text-slate-400">{formatDate(tx.createdAt)}</td>
                         <td className="py-2.5 px-3 font-sans">{products.find((p: any) => p.id === tx.productId)?.name?.split(' (')[0] || tx.productId}</td>
                         <td className="py-2.5 px-3 uppercase font-bold text-slate-700">{tx.vehiclePlate || 'Auxiliar'}</td>
-                        <td className="py-2.5 px-3">{tx.driverId || 'Central RFID'}</td>
+                        <td className="py-2.5 px-3">
+                          {drivers.find((drv: any) => drv.id === tx.driverId || drv.name === tx.driverId)?.name || tx.driverId || 'Central RFID'}
+                        </td>
                         <td className="py-2.5 px-3 font-bold text-slate-800">{formatLiters(tx.liters)}</td>
                         <td className="py-2.5 px-3 text-right font-bold">{formatCurrency(tx.amount)}</td>
                       </tr>

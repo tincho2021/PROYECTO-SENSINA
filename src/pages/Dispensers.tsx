@@ -23,7 +23,7 @@ interface DispensersProps {
 }
 
 export default function Dispensers({ data, onRefresh }: DispensersProps) {
-  const { dispensers = [], products = [], transactions = [] } = data || {};
+  const { dispensers = [], products = [], transactions = [], drivers = [] } = data || {};
 
   if (dispensers.length === 0) {
     return (
@@ -236,7 +236,9 @@ export default function Dispensers({ data, onRefresh }: DispensersProps) {
                   <td className="py-3 px-3 text-slate-500">{formatDate(tx.createdAt)}</td>
                   <td className="py-3 px-3 font-bold text-slate-700">{tx.dispenserId}</td>
                   <td className="py-3 px-3">HOSE {tx.hose}</td>
-                  <td className="py-3 px-3 text-slate-700">{tx.driverId || 'Control Remoto'}</td>
+                  <td className="py-3 px-3 text-slate-700">
+                    {drivers.find((drv: any) => drv.id === tx.driverId || drv.name === tx.driverId)?.name || tx.driverId || 'Control Remoto'}
+                  </td>
                   <td className="py-3 px-3 uppercase">{tx.vehiclePlate || 'N/A'}</td>
                   <td className="py-3 px-3 text-slate-800 font-bold">{formatLiters(tx.liters)}</td>
                   <td className="py-3 px-3 text-right">{tx.authorizationMethod || 'RFID'}</td>

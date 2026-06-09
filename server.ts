@@ -713,6 +713,81 @@ async function startServer() {
     res.json({ success: true, message: `Telemetry updated successfully for tank ${tank.id} (ESP32 node tank: ${tank_id})`, tank });
   });
 
+  // Helper functions to resolve driver and vehicle details from string IDs or names
+  const lookupDriver = (driverVal: any) => {
+    if (!driverVal) return { id: undefined, name: undefined };
+    const val = String(driverVal).trim().toLowerCase();
+    
+    // Check against current database first if available
+    const dbMatch = db.drivers.find(d => 
+      d.id.toLowerCase() === val || 
+      d.name.toLowerCase() === val ||
+      d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === val.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    );
+    if (dbMatch) {
+      return { id: dbMatch.id, name: dbMatch.name };
+    }
+
+    // Fallback static list matching mock data
+    const driversDb = [
+      { id: 'DRV-001', name: 'Martin Rodriguez' },
+      { id: 'DRV-002', name: 'Federico Villagra' },
+      { id: 'DRV-003', name: 'María Rodríguez' },
+      { id: 'DRV-004', name: 'Juan Carlos Ortiz' },
+      { id: 'DRV-005', name: 'Esteban Benítez' },
+      { id: 'DRV-006', name: 'Patricia Gómez' },
+      { id: 'DRV-007', name: 'Carlos Peralta' }
+    ];
+
+    const found = driversDb.find(d => 
+      d.id.toLowerCase() === val || 
+      d.name.toLowerCase() === val || 
+      d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === val.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    );
+
+    if (found) {
+      return { id: found.id, name: found.name };
+    }
+    return { id: "DRV-AUTO", name: driverVal };
+  };
+
+  const lookupVehicle = (vehicleVal: any) => {
+    if (!vehicleVal) return { id: undefined, plate: undefined };
+    const val = String(vehicleVal).trim().toLowerCase();
+
+    // Check against current database first if available
+    const dbMatch = db.vehicles.find(v =>
+      v.id.toLowerCase() === val ||
+      v.plate.toLowerCase().replace(/[^a-z0-9]/g, '') === val.replace(/[^a-z0-9]/g, '') ||
+      (v.brand + " " + v.model).toLowerCase().includes(val)
+    );
+    if (dbMatch) {
+      return { id: dbMatch.id, plate: dbMatch.plate };
+    }
+
+    // Fallback static list matching mock data
+    const vehiclesDb = [
+      { id: 'VEH-001', plate: 'AA-510-ZZ', model: 'Hilux', brand: 'Toyota' },
+      { id: 'VEH-002', plate: 'AF-112-OP', model: 'Ranger', brand: 'Ford' },
+      { id: 'VEH-003', plate: 'AA-450-XX', model: 'R450 Heavy', brand: 'Scania' },
+      { id: 'VEH-004', plate: 'AE-321-LL', model: 'Constellation', brand: 'Volkswagen' },
+      { id: 'VEH-005', plate: 'AG-987-YY', model: 'Daily', brand: 'Iveco' },
+      { id: 'VEH-006', plate: 'AD-456-WW', model: 'F-100', brand: 'Ford' },
+      { id: 'VEH-007', plate: 'AB-123-CD', model: 'Sprinter', brand: 'Mercedes-Benz' }
+    ];
+
+    const found = vehiclesDb.find(v =>
+      v.id.toLowerCase() === val ||
+      v.plate.toLowerCase().replace(/[^a-z0-9]/g, '') === val.replace(/[^a-z0-9]/g, '') ||
+      (v.brand + " " + v.model).toLowerCase().includes(val)
+    );
+
+    if (found) {
+      return { id: found.id, plate: found.plate };
+    }
+    return { id: "VEH-AUTO", plate: vehicleVal };
+  };
+
   // 2. ESP32 Surtidores Status Endpoint
   // POST /api/dispenser-status
   app.post('/api/dispenser-status', validateDeviceToken, (req, res) => {
@@ -787,6 +862,9 @@ async function startServer() {
         );
 
         if (!hasTx && !hasDupe) {
+          const resolvedDrv = lookupDriver(d.driver);
+          const resolvedVeh = lookupVehicle(d.vehicle || d.plate);
+
           const newTx = {
             id: txId,
             siteId: (req as any).device?.siteId || "rosario-01",
@@ -796,9 +874,9 @@ async function startServer() {
             liters: Number(d.last_sale_liters),
             amount: Number(d.last_sale_amount || d.last_sale_liters * 1200),
             pricePerLiter: d.last_sale_amount ? Number((d.last_sale_amount / d.last_sale_liters).toFixed(2)) : 1200,
-            driverId: d.driver ? "DRV-AUTO" : undefined,
-            vehicleId: d.vehicle ? "VEH-AUTO" : undefined,
-            vehiclePlate: d.plate || "SIN-PAT",
+            driverId: resolvedDrv.id,
+            vehicleId: resolvedVeh.id,
+            vehiclePlate: resolvedVeh.plate || d.plate || "SIN-PAT",
             odometer: d.odometer || 0,
             timestampStart: new Date(Date.now() - 3 * 60000).toISOString(),
             timestampEnd: new Date().toISOString(),
@@ -944,6 +1022,9 @@ async function startServer() {
     }
 
     // 1. Log transaction
+    const resolvedDrv = lookupDriver(driver_id);
+    const resolvedVeh = lookupVehicle(vehicle_id || vehicle_plate);
+
     const newTx = {
       id: transaction_id || `TX-${Date.now()}`,
       siteId: (req as any).device.siteId,
@@ -953,9 +1034,9 @@ async function startServer() {
       liters: Number(liters),
       amount: Number(amount || liters * (price_per_liter || 1200)),
       pricePerLiter: Number(price_per_liter || 1200),
-      driverId: driver_id,
-      vehicleId: vehicle_id,
-      vehiclePlate: vehicle_plate,
+      driverId: resolvedDrv.id || driver_id,
+      vehicleId: resolvedVeh.id || vehicle_id,
+      vehiclePlate: resolvedVeh.plate || vehicle_plate,
       odometer: odometer,
       timestampStart: new Date(Date.now() - 3 * 60000).toISOString(),
       timestampEnd: new Date().toISOString(),
@@ -1023,10 +1104,10 @@ async function startServer() {
       liters: newTx.liters,
       amount: newTx.amount,
       price_per_liter: newTx.pricePerLiter,
-      driver_id: driver_id || "DRV-001",
-      driver_name: db.drivers.find(d => d.id === driver_id)?.name || "Juan Pérez",
-      vehicle_id: vehicle_id || "VEH-001",
-      vehicle_plate: vehicle_plate || "AB123CD",
+      driver_id: newTx.driverId || "DRV-001",
+      driver_name: db.drivers.find(d => d.id === newTx.driverId)?.name || req.body.driver_name || "Juan Pérez",
+      vehicle_id: newTx.vehicleId || "VEH-001",
+      vehicle_plate: newTx.vehiclePlate || "AB123CD",
       odometer: odometer || 145230,
       authorization_method: (authorization_method as any) || "RFID",
       authorization_id: req.body.authorization_id || "RFID-000145",
