@@ -551,10 +551,11 @@ void checkAndSyncFleet() {
   }
 
   if (httpCode == 200 && payload != "") {
-    DynamicJsonDocument doc(12000);
-    DeserializationError error = deserializeJson(doc, payload);
+    // Almacenamos el JSON Document en el Heap para evitar un Stack Overflow crítico (Guru Meditation Error)
+    DynamicJsonDocument* doc = new DynamicJsonDocument(16384);
+    DeserializationError error = deserializeJson(*doc, payload);
     if (!error) {
-      JsonArray drivers = doc["drivers"];
+      JsonArray drivers = (*doc)["drivers"];
       cached_drivers_count = 0;
       for (JsonObject d : drivers) {
         if (cached_drivers_count >= 15) break;
@@ -563,7 +564,7 @@ void checkAndSyncFleet() {
         cached_drivers[cached_drivers_count].rfid_card = d["rfid_card"].as<String>();
         cached_drivers_count++;
       }
-      JsonArray vehicles = doc["vehicles"];
+      JsonArray vehicles = (*doc)["vehicles"];
       cached_vehicles_count = 0;
       for (JsonObject v : vehicles) {
         if (cached_vehicles_count >= 15) break;
@@ -575,6 +576,7 @@ void checkAndSyncFleet() {
       }
       Serial.printf("[C.E.S.T.I. FLOTA] Sincronizado: %d choferes y %d vehiculos.\\n", cached_drivers_count, cached_vehicles_count);
     }
+    delete doc;
   }
 }
 
@@ -687,10 +689,11 @@ void updateSimulation() {
 void handleRoot() { server.send_P(200, "text/html", MAIN_page); }
 
 void handleState() {
-  DynamicJsonDocument doc(8192);
-  doc["site_id"] = site_id;
-  doc["site_name"] = site_name;
-  JsonArray tankArray = doc.createNestedArray("tanks");
+  // Almacenamos el JSON Document en el Heap para evitar un Stack Overflow bajo la tarea del servidor Web local
+  DynamicJsonDocument* doc = new DynamicJsonDocument(12288);
+  (*doc)["site_id"] = site_id;
+  (*doc)["site_name"] = site_name;
+  JsonArray tankArray = (*doc).createNestedArray("tanks");
   for (int i = 0; i < 3; i++) {
     JsonObject t = tankArray.createNestedObject();
     t["tank_id"] = tanks[i].tank_id;
@@ -699,7 +702,7 @@ void handleState() {
     t["capacity_liters"] = tanks[i].capacity_liters;
     t["temperature_c"] = tanks[i].temperature_c;
   }
-  JsonArray nozzleArray = doc.createNestedArray("nozzles");
+  JsonArray nozzleArray = (*doc).createNestedArray("nozzles");
   for (int i = 0; i < 2; i++) {
     JsonObject n = nozzleArray.createNestedObject();
     n["dispenser_id"] = nozzles[i].dispenser_id;
@@ -719,14 +722,14 @@ void handleState() {
     n["authorization_method"] = nozzles[i].authorization_method;
   }
 
-  JsonArray dArr = doc.createNestedArray("cached_drivers");
+  JsonArray dArr = (*doc).createNestedArray("cached_drivers");
   for (int i = 0; i < cached_drivers_count; i++) {
     JsonObject dObj = dArr.createNestedObject();
     dObj["id"] = cached_drivers[i].id;
     dObj["name"] = cached_drivers[i].name;
     dObj["rfid_card"] = cached_drivers[i].rfid_card;
   }
-  JsonArray vArr = doc.createNestedArray("cached_vehicles");
+  JsonArray vArr = (*doc).createNestedArray("cached_vehicles");
   for (int i = 0; i < cached_vehicles_count; i++) {
     JsonObject vObj = vArr.createNestedObject();
     vObj["id"] = cached_vehicles[i].id;
@@ -736,8 +739,9 @@ void handleState() {
   }
 
   String output;
-  serializeJson(doc, output);
+  serializeJson(*doc, output);
   server.send(200, "application/json", output);
+  delete doc;
 }
 
 void handleUpdateTank() {
