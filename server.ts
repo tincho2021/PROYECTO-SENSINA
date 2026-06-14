@@ -40,7 +40,8 @@ const db = {
   alerts: [...mockAlerts],
   devices: [...mockDevices],
   users: [...mockUsers],
-  auditLogs: [...mockAuditLogs]
+  auditLogs: [...mockAuditLogs],
+  esp32RawLogs: [] as any[]
 };
 
 async function startServer() {
@@ -413,6 +414,19 @@ async function startServer() {
       } catch (e: any) {
         console.warn("[C.E.S.T.I. SYNC] Error fetching latest deliveries from KVDB:", e?.message || e);
       }
+
+      // 8. Sync latest raw ESP32 payloads
+      try {
+        const res = await fetch(`https://kvdb.io/${bucket}/esp32-raw-payloads`);
+        if (res.ok) {
+          const rawLogsData = await res.json();
+          if (Array.isArray(rawLogsData)) {
+            db.esp32RawLogs = rawLogsData;
+          }
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching latest raw payloads from KVDB:", e?.message || e);
+      }
     } catch (err: any) {
       console.error("[C.E.S.T.I. SYNC] Shared KVDB sync completed with errors:", err?.message || err);
     }
@@ -481,6 +495,31 @@ async function startServer() {
     res.json({
       ok: true,
       data: db.deliveries
+    });
+  });
+
+  app.get('/api/esp32-logs', async (req, res) => {
+    await syncWithSharedKvdb();
+    res.json({
+      ok: true,
+      data: db.esp32RawLogs || []
+    });
+  });
+
+  app.post('/api/clear-raw-logs', async (req, res) => {
+    db.esp32RawLogs = [];
+    try {
+      await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/esp32-raw-payloads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+    } catch (e: any) {
+      console.warn("Error clearing raw logs in cloud:", e?.message);
+    }
+    res.json({
+      ok: true,
+      message: "Historial de payloads crudos ESP32 borrado correctamente."
     });
   });
 
@@ -824,6 +863,23 @@ async function startServer() {
   // 1. ESP32 Telemetry Endpoint
   // POST /api/telemetry
   app.post('/api/telemetry', validateDeviceToken, (req, res) => {
+    // Log the raw incoming JSON to our debug stack
+    if (req.body) {
+      db.esp32RawLogs.unshift({
+        timestamp: new Date().toISOString(),
+        ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+        payload: { ...req.body }
+      });
+      db.esp32RawLogs = db.esp32RawLogs.slice(0, 50);
+
+      // Save to cloud KVDB in background
+      fetch(`https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/esp32-raw-payloads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(db.esp32RawLogs)
+      }).catch(() => {});
+    }
+
     const { 
       tank_id, 
       height_mm, 

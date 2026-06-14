@@ -23,6 +23,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { fetchLatestTelemetry } from '../services/telemetryService';
+import { fetchEsp32Logs, clearEsp32Logs } from '../services/api';
 import { TelemetryPayload } from '../types';
 const getEsp32CodeTemplate = (baseUrl: string) => `#include <WiFi.h>
 #include <WebServer.h>
@@ -875,6 +876,8 @@ export default function Esp32Live() {
   const [inputServerBase, setInputServerBase] = useState<string>(customServerBase);
   const [latestTelemetry, setLatestTelemetry] = useState<TelemetryPayload | null>(null);
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetryPayload[]>([]);
+  const [rawPayloadLogs, setRawPayloadLogs] = useState<any[]>([]);
+  const [isRawLoading, setIsRawLoading] = useState<boolean>(false);
   const [isPollingActive, setIsPollingActive] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -886,6 +889,21 @@ export default function Esp32Live() {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleClearRawLogs = async () => {
+    if (!window.confirm("¿Seguro de limpiar todo el historial de payloads crudos recibidos en el servidor? Esto vaciará el stack de payloads JSON para descartar problemas de parseo.")) {
+      return;
+    }
+    setIsRawLoading(true);
+    try {
+      await clearEsp32Logs();
+      setRawPayloadLogs([]);
+    } catch (err) {
+      console.warn("Failed to clear raw logs", err);
+    } finally {
+      setIsRawLoading(false);
+    }
   };
 
   const handleSaveServerBase = (url: string) => {
@@ -916,6 +934,15 @@ export default function Esp32Live() {
         historyRef.current = updatedHistory;
         setTelemetryHistory(updatedHistory);
       }
+    }
+
+    try {
+      const logs = await fetchEsp32Logs();
+      if (Array.isArray(logs)) {
+        setRawPayloadLogs(logs);
+      }
+    } catch (e) {
+      console.warn("Error fetching raw payload logs", e);
     }
   };
 
@@ -1363,6 +1390,60 @@ export default function Esp32Live() {
                       <span className="text-teal-650 font-bold">{t.signal_rssi} dBm</span>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Historial de Payloads JSON Recibidos */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest block font-sans">
+                  📡 Historial de JSONs desde ESP32 (Servidor)
+                </span>
+                <span className="text-[9px] text-slate-400 block font-sans mt-0.5">
+                  Muestra la trama cruda original sin parsear para diagnosticar la sonda física.
+                </span>
+              </div>
+              {rawPayloadLogs.length > 0 && (
+                <button
+                  onClick={handleClearRawLogs}
+                  disabled={isRawLoading}
+                  className="cursor-pointer text-[10px] bg-red-50 text-red-700 hover:bg-red-100 px-2.5 py-1 rounded-lg flex items-center gap-1 font-mono hover:text-red-850"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {isRawLoading ? 'Borrando...' : 'VACIAR STACK'}
+                </button>
+              )}
+            </div>
+
+            {rawPayloadLogs.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 text-xs italic leading-relaxed">
+                Ninguna trama física recibida del ESP32 guardada en el servidor. 
+                <span className="block text-[10px] text-slate-350 font-normal mt-1">Conecte su sonda real o use el simulador para testear transmisiones.</span>
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                {rawPayloadLogs.map((logItem, idx) => (
+                  <details key={idx} className="group border border-slate-200 rounded-xl bg-slate-50/70 overflow-hidden text-xs">
+                    <summary className="flex justify-between items-center p-3 cursor-pointer select-none font-mono hover:bg-slate-100/50">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-650 font-bold font-sans">
+                          #{rawPayloadLogs.length - idx}
+                        </span>
+                        <span className="font-extrabold text-slate-700">
+                          {logItem.payload?.tank_id || logItem.payload?.site_id || 'Pack_IoT'}
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-slate-400 font-sans font-medium">
+                        {logItem.timestamp ? new Date(logItem.timestamp).toLocaleTimeString() : 'N/A'}
+                      </span>
+                    </summary>
+                    <div className="p-3 border-t border-slate-205/60 bg-slate-900 text-emerald-400 font-mono text-[10px] whitespace-pre-wrap overflow-x-auto max-h-56">
+                      {JSON.stringify(logItem.payload, null, 2)}
+                    </div>
+                  </details>
                 ))}
               </div>
             )}

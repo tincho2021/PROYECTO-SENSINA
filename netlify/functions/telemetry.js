@@ -146,6 +146,40 @@ exports.handler = async (event, context) => {
 
   console.log(`[C.E.S.T.I.] Telemetría exitosa de tanque: ${telemetryRecord.tank_id} | Vol: ${telemetryRecord.volume_liters} L`);
 
+  // --- PERSISTENCIA RAW PAYLOAD LOG EN KVDB Y BLOBS ---
+  try {
+    let rawLogs = [];
+    try {
+      const resRaw = await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/esp32-raw-payloads");
+      if (resRaw.ok) {
+        rawLogs = await resRaw.json();
+      }
+    } catch (e) {}
+    if (!Array.isArray(rawLogs)) rawLogs = [];
+
+    rawLogs.unshift({
+      timestamp: received_at,
+      ip: clientIp,
+      payload: payload
+    });
+
+    rawLogs = rawLogs.slice(0, 50);
+
+    await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/esp32-raw-payloads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(rawLogs)
+    });
+
+    try {
+      const storeObj = getStore({ name: "cesti-telemetry" });
+      await storeObj.setJSON("esp32-raw-payloads", rawLogs);
+    } catch (err) {}
+    console.log(`[C.E.S.T.I. LOGS] Payload grabado con éxito en el historial (Total logs: ${rawLogs.length})`);
+  } catch (err) {
+    console.warn("[C.E.S.T.I.] Falló registro en historial de raw payload:", err.message);
+  }
+
   // Guardar en memoria de sesión local (Hot starts de Lambda)
   global.latestTelemetryData = telemetryRecord;
   global.latestTanksMap = global.latestTanksMap || {};

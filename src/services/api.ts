@@ -877,3 +877,57 @@ export async function deleteUser(id: string) {
     return { success: true };
   }
 }
+
+/**
+ * Fetch raw ESP32 JSON logs
+ */
+export async function fetchEsp32Logs() {
+  try {
+    const res = await fetch('/api/esp32-logs');
+    if (res.ok) {
+      const body = await res.json();
+      if (body && body.ok && Array.isArray(body.data)) {
+        return body.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[SENSINA API] Local fetchEsp32Logs failed, trying fallback.', err);
+  }
+
+  try {
+    const res = await fetch('https://velvety-vacherin-c43b91.netlify.app/api/esp32-logs');
+    if (res.ok) {
+      const body = await res.json();
+      if (body && body.ok && Array.isArray(body.data)) {
+        return body.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[SENSINA API] Fallback fetchEsp32Logs failed.', err);
+  }
+
+  return [] as any[];
+}
+
+/**
+ * Clear raw ESP32 JSON logs
+ */
+export async function clearEsp32Logs() {
+  try {
+    await fetch('/api/clear-raw-logs', { method: 'POST' });
+  } catch (err) {
+    console.warn('[SENSINA API] Clear on local backend failed, trying fallback.', err);
+  }
+
+  try {
+    await fetch('https://velvety-vacherin-c43b91.netlify.app/api/esp32-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'clear' })
+    });
+  } catch (err) {
+    console.warn('[SENSINA API] Fallback clearEsp32Logs failed.', err);
+  }
+
+  return { success: true };
+}
