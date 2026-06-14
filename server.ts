@@ -83,6 +83,77 @@ async function startServer() {
   let latestDispenserStatusData: any = null;
   let latestAlarmsData: any[] = [];
 
+  // Automatic Delivery/discharge detection logic
+  function checkAndRegisterAutoDelivery(
+    tankId: string,
+    prevVolume: number,
+    newVolume: number,
+    productId: string,
+    temperature: number,
+    density: number,
+    tankName: string
+  ) {
+    const diff = Number(newVolume) - Number(prevVolume);
+    // Detection threshold: 250 Liters
+    if (diff >= 250) {
+      // Avoid inserting duplicate automatic deliveries if they happen within a short interval (e.g. 10 minutes)
+      const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+      const isDuplicate = db.deliveries.some(d => 
+        d.tankId === tankId && 
+        d.id.startsWith('DL-AUTO-') &&
+        Math.abs(d.litersDeclared - diff) < 150 &&
+        new Date(d.timestamp).getTime() > tenMinutesAgo
+      );
+
+      if (isDuplicate) {
+        console.log(`[C.E.S.T.I. AUTO-DELIVERY] Omitiendo descarga duplicada detectada para el tanque ${tankId} (+${diff.toFixed(1)} L)`);
+        return;
+      }
+
+      const newDelivery = {
+        id: `DL-AUTO-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        supplier: 'Detección Automática IoT',
+        invoiceNumber: `AUTO-${Math.floor(100000 + Math.random() * 900000)}`,
+        productId: productId || 'GO2',
+        tankId: tankId,
+        litersDeclared: Number(diff.toFixed(1)),
+        litersMeasuredBefore: Number(prevVolume.toFixed(1)),
+        litersMeasuredAfter: Number(newVolume.toFixed(1)),
+        differenceLiters: 0,
+        temperatureC: Number(temperature || 20),
+        density: Number(density || 840),
+        operator: 'Sonda de Telemedición SENSINA',
+        notes: `Detección automática: Incremento repentino de +${diff.toFixed(1)} L registrado por la sonda IoT de nivel.`
+      };
+
+      db.deliveries.unshift(newDelivery);
+
+      // Register an audit log
+      db.auditLogs.unshift({
+        id: `AUD-AUTO-DL-${Date.now()}`,
+        userId: 'device-esp32',
+        username: 'Sonda IoT',
+        action: 'Descarga Detectada',
+        details: `Incremento de stock detectado automáticamente en ${tankName || tankId}: +${diff.toFixed(1)} L de ${productId}.`,
+        timestamp: new Date().toISOString()
+      });
+
+      // Insert an alert
+      db.alerts.unshift({
+        id: `ALT-AUTO-DL-${Date.now()}`,
+        level: 'info',
+        timestamp: new Date().toISOString(),
+        source: tankName || tankId,
+        description: `Descarga de combustible detectada de forma automática en ${tankName || tankId}: +${diff.toFixed(1)} Litros.`,
+        status: 'new',
+        recommendation: 'Asociar remito correspondiente para completar la conciliación fiscal de mermas.'
+      });
+
+      console.log(`[C.E.S.T.I. AUTO-DELIVERY] ¡DESCARGA DETECTADA AUTOMÁTICAMENTE! Tanque ${tankId}, +${diff.toFixed(1)} litros.`);
+    }
+  }
+
   // Sync state with the shared global KVDB.io bucket
   async function syncWithSharedKvdb() {
     try {
@@ -115,8 +186,11 @@ async function startServer() {
 
               let localTank = db.tanks.find(t => t.id === targetId);
               if (localTank) {
+                const prevVolume = localTank.currentVolumeLiters || 0;
+                const newVolume = Number(kvTank.volume_liters ?? kvTank.currentVolumeLiters ?? prevVolume);
+
                 if (pId) localTank.productId = pId;
-                localTank.currentVolumeLiters = kvTank.volume_liters ?? kvTank.currentVolumeLiters ?? localTank.currentVolumeLiters;
+                localTank.currentVolumeLiters = newVolume;
                 localTank.currentHeightMm = kvTank.height_mm ?? kvTank.currentHeightMm ?? localTank.currentHeightMm;
                 localTank.temperatureC = kvTank.temperature_c ?? kvTank.temperatureC ?? localTank.temperatureC;
                 localTank.waterMm = kvTank.water_mm ?? kvTank.waterMm ?? localTank.waterMm;
@@ -125,6 +199,19 @@ async function startServer() {
                 localTank.signalRssi = kvTank.signal_rssi ?? kvTank.signalRssi ?? localTank.signalRssi;
                 localTank.sensorStatus = kvTank.sensor_status ?? kvTank.sensorStatus ?? localTank.sensorStatus;
                 localTank.lastUpdated = kvTank.received_at || kvTank.lastUpdated || new Date().toISOString();
+
+                // Trigger detection if volume went up
+                if (newVolume > prevVolume) {
+                  checkAndRegisterAutoDelivery(
+                    localTank.id,
+                    prevVolume,
+                    newVolume,
+                    localTank.productId,
+                    localTank.temperatureC,
+                    840,
+                    localTank.name
+                  );
+                }
               } else {
                 db.tanks.push({
                   id: targetId,
@@ -875,6 +962,19 @@ async function startServer() {
     tank.signalRssi = signal_rssi ?? tank.signalRssi;
     tank.sensorStatus = sensor_status ?? tank.sensorStatus;
     tank.lastUpdated = new Date().toISOString();
+
+    // Trigger detection if volume went up
+    if (volume_liters !== undefined && Number(volume_liters) > prevVolume) {
+      checkAndRegisterAutoDelivery(
+        tank.id,
+        prevVolume,
+        Number(volume_liters),
+        tank.productId,
+        tank.temperatureC,
+        Number(product_density || 840),
+        tank.name
+      );
+    }
 
     // Trigger Smart Alerts based on updated telemetry in background
     if (tank.currentVolumeLiters <= tank.capacityLiters * 0.15) {

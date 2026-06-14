@@ -21,10 +21,10 @@ interface ReportsProps {
   data: any;
 }
 
-type ReportType = 'daily-stock' | 'monthly-consumption' | 'fleet-withdrawals' | 'reconciliation-discrepancies';
+type ReportType = 'daily-stock' | 'monthly-consumption' | 'fleet-withdrawals' | 'reconciliation-discrepancies' | 'auto-deliveries';
 
 export default function Reports({ data }: ReportsProps) {
-  const { tanks = [], transactions = [], products = [], reconciliations = [], drivers = [] } = data || {};
+  const { tanks = [], transactions = [], products = [], reconciliations = [], drivers = [], deliveries = [] } = data || {};
   const [activeReport, setActiveReport] = useState<ReportType>('daily-stock');
   const [siteFilter, setSiteFilter] = useState('ALL');
   
@@ -103,6 +103,16 @@ export default function Reports({ data }: ReportsProps) {
               <ArrowRight className="w-3.5 h-3.5 opacity-65 group-hover:translate-x-0.5 transition-transform" />
             </button>
 
+            <button
+              onClick={() => setActiveReport('auto-deliveries')}
+              className={`w-full p-2.5 rounded text-left text-xs font-bold font-sans flex items-center justify-between group transition-colors cursor-pointer ${
+                activeReport === 'auto-deliveries' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <span>5. Descargas Detectadas IoT</span>
+              <ArrowRight className="w-3.5 h-3.5 opacity-65 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+
           </div>
 
           <div className="border-t border-slate-100 pt-3">
@@ -132,6 +142,7 @@ export default function Reports({ data }: ReportsProps) {
                 {activeReport === 'monthly-consumption' && 'Consolidado Consumo de Productos'}
                 {activeReport === 'fleet-withdrawals' && 'Registro de Despachos por Unidades de Flota'}
                 {activeReport === 'reconciliation-discrepancies' && 'Auditoría de Conciliaciones y Mermas'}
+                {activeReport === 'auto-deliveries' && 'Descargas de Combustible Detectadas Automágicamente (IoT)'}
               </h2>
             </div>
 
@@ -271,6 +282,70 @@ export default function Reports({ data }: ReportsProps) {
                       <td className={`py-2.5 px-3 text-right font-bold ${Math.abs(rec.differencePct) > 1 ? 'text-red-650' : 'text-slate-600'}`}>{rec.differencePct}%</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* 5. Automatic Descargas IoT Reports */}
+            {activeReport === 'auto-deliveries' && (
+              <table className="w-full text-left text-xs text-slate-600 font-medium whitespace-nowrap">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono text-[10px] uppercase">
+                    <th className="py-2.5 px-3">Fecha y Hora</th>
+                    <th className="py-2.5 px-3">ID Descarga</th>
+                    <th className="py-2.5 px-3">Tanque Destino</th>
+                    <th className="py-2.5 px-3">Combustible</th>
+                    <th className="py-2.5 px-3">Volumen Previo</th>
+                    <th className="py-2.5 px-3">Volumen Final</th>
+                    <th className="py-2.5 px-3">Litros Incrementados</th>
+                    <th className="py-2.5 px-3">Detección</th>
+                    <th className="py-2.5 px-3 text-right">Estado Sonda</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono">
+                  {(deliveries || [])
+                    .filter((d: any) => 
+                      d.id?.startsWith('DL-AUTO-') || 
+                      d.supplier?.toLowerCase().includes('automát') || 
+                      d.operator?.toLowerCase().includes('sensor') ||
+                      d.notes?.toLowerCase().includes('automát')
+                    )
+                    .filter((d: any) => siteFilter === 'ALL' || !d.tankId || (tanks.find((t: any) => t.id === d.tankId)?.siteId === siteFilter))
+                    .map((d: any) => (
+                      <tr key={d.id} className="hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3 font-sans text-slate-500">{formatDate(d.timestamp)}</td>
+                        <td className="py-2.5 px-3 font-bold text-slate-800">{d.id}</td>
+                        <td className="py-2.5 px-3 font-sans">{tanks.find((t: any) => t.id === d.tankId)?.name || d.tankId}</td>
+                        <td className="py-2.5 px-3 font-sans font-semibold">
+                          {products.find((p: any) => p.id === d.productId)?.name?.split(' (')[0] || d.productId}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-500">{formatLiters(d.litersMeasuredBefore || 0)}</td>
+                        <td className="py-2.5 px-3 text-slate-500">{formatLiters(d.litersMeasuredAfter || 0)}</td>
+                        <td className="py-2.5 px-3 font-extrabold text-emerald-600">+{formatLiters(d.litersDeclared || 0)}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="bg-cyan-50 text-cyan-700 border border-cyan-100 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider font-sans">
+                            Sonda IoT ⚡
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider font-sans">
+                            Completada
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  {(deliveries || []).filter((d: any) => 
+                      d.id?.startsWith('DL-AUTO-') || 
+                      d.supplier?.toLowerCase().includes('automát') || 
+                      d.operator?.toLowerCase().includes('sensor') ||
+                      d.notes?.toLowerCase().includes('automát')
+                    ).length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="py-8 text-center text-slate-400 font-sans">
+                          Sin descargas detectadas de forma automática recientemente. Incrementa el volumen de un tanque en la simulación de telemetría para ver la detección instantánea.
+                        </td>
+                      </tr>
+                    )}
                 </tbody>
               </table>
             )}

@@ -153,7 +153,16 @@ export default function Deliveries({ data, onRefresh, onAddDelivery, isAdmin = t
                   return (
                     <tr key={d.id} className="hover:bg-slate-50/50">
                       <td className="py-3 px-4 font-sans text-slate-500">{formatDate(d.timestamp)}</td>
-                      <td className="py-3 px-4 text-slate-900 font-sans font-bold">{d.supplier}</td>
+                      <td className="py-3 px-4 text-slate-900 font-sans font-bold">
+                        <div className="flex flex-col">
+                          <span>{d.supplier}</span>
+                          {(d.id?.startsWith('DL-AUTO-') || d.supplier?.toLowerCase().includes('automát') || d.operator?.toLowerCase().includes('sensor') || d.notes?.toLowerCase().includes('automát')) && (
+                            <span className="inline-block bg-cyan-50 text-cyan-700 border border-cyan-100 text-[9px] font-extrabold px-1.5 py-0.5 rounded mt-1 w-fit uppercase tracking-wider font-sans">
+                              Sonda IoT ⚡
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 font-bold text-slate-600">{d.invoiceNumber}</td>
                       <td className="py-3 px-4 font-sans text-[11px]">{tanks.find((t: any) => t.id === d.tankId)?.name || d.tankId}</td>
                       <td className="py-3 px-4 font-bold text-slate-800">{formatLiters(d.litersDeclared)}</td>
