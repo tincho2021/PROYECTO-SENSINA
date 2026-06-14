@@ -94,6 +94,7 @@ struct Nozzle {
   float current_sale_amount;
   float last_sale_liters;
   float last_sale_amount;
+  String last_transaction_id;
   String driver;
   String vehicle;
   String plate;
@@ -204,6 +205,7 @@ Nozzle nozzles[2] = {
     "",
     "",
     "",
+    "",
     0,
     "RFID",
     0.25
@@ -219,6 +221,7 @@ Nozzle nozzles[2] = {
     0,
     0,
     0,
+    "",
     "",
     "",
     "",
@@ -630,6 +633,7 @@ bool sendDispenserStatus() {
     d["current_sale_amount"] = nozzles[i].current_sale_amount;
     d["last_sale_liters"] = nozzles[i].last_sale_liters;
     d["last_sale_amount"] = nozzles[i].last_sale_amount;
+    d["last_transaction_id"] = nozzles[i].last_transaction_id;
     d["driver"] = nozzles[i].driver;
     d["vehicle"] = nozzles[i].vehicle;
     d["plate"] = nozzles[i].plate;
@@ -718,6 +722,7 @@ void handleState() {
     n["current_sale_amount"] = nozzles[i].current_sale_amount;
     n["last_sale_liters"] = nozzles[i].last_sale_liters;
     n["last_sale_amount"] = nozzles[i].last_sale_amount;
+    n["last_transaction_id"] = nozzles[i].last_transaction_id;
     n["driver"] = nozzles[i].driver;
     n["vehicle"] = nozzles[i].vehicle;
     n["plate"] = nozzles[i].plate;
@@ -787,6 +792,7 @@ void handleStopFueling() {
   if (nozzles[index].last_sale_liters > 0) {
     char txId[32];
     snprintf(txId, sizeof(txId), "TX-ESP32-%05ld", random(10000, 99999));
+    nozzles[index].last_transaction_id = String(txId);
     registrarTransaccionCompletada(
       txId,
       nozzles[index].dispenser_id.c_str(),
@@ -809,6 +815,7 @@ void handleResetSale() {
   nozzles[index].current_sale_amount = 0;
   nozzles[index].last_sale_liters = 0;
   nozzles[index].last_sale_amount = 0;
+  nozzles[index].last_transaction_id = "";
   server.send(200, "text/plain", "Venta reseteada");
 }
 

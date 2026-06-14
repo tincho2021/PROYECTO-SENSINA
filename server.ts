@@ -1359,7 +1359,7 @@ async function startServer() {
         const hasTx = db.transactions.some(tx => tx.id === txId);
         const hasDupe = db.transactions.some(tx => 
           tx.dispenserId === d.dispenser_id && 
-          Number(tx.liters) === Number(d.last_sale_liters) && 
+          Math.abs(Number(tx.liters) - Number(d.last_sale_liters)) < 0.05 && 
           Math.abs(new Date(tx.createdAt || tx.timestampEnd || Date.now()).getTime() - Date.now()) < 120000
         );
 

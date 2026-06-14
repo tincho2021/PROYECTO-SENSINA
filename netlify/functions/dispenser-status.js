@@ -177,10 +177,10 @@ exports.handler = async (event, context) => {
     activeCompletedSales.forEach(d => {
       const txId = d.last_transaction_id || `TX-AUTO-${d.dispenser_id}-${Math.round(d.last_sale_liters * 100)}-${new Date(received_at).toISOString().split('T')[0]}`;
       
-      const hasTx = transactionsList.some(tx => tx.transaction_id === txId);
+      const hasTx = transactionsList.some(tx => tx.transaction_id === txId || tx.id === txId);
       const hasDupe = transactionsList.some(tx => 
         tx.dispenser_id === d.dispenser_id && 
-        Number(tx.liters) === Number(d.last_sale_liters) && 
+        Math.abs(Number(tx.liters) - Number(d.last_sale_liters)) < 0.05 && 
         Math.abs(new Date(tx.timestamp_end || tx.received_at || received_at).getTime() - new Date(received_at).getTime()) < 120000
       );
 
