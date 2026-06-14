@@ -155,14 +155,41 @@ async function startServer() {
     }
   }
 
+  let lastSyncTime = 0;
+  let isSyncing = false;
+
   // Sync state with the shared global KVDB.io bucket
   async function syncWithSharedKvdb() {
+    const now = Date.now();
+    // Throttle: If already syncing, or if we synced less than 15 seconds ago, resolve immediately from local cache
+    if (isSyncing || (now - lastSyncTime < 15000)) {
+      return;
+    }
+    isSyncing = true;
+
+    // Helper to abort extremely slow KVDB responses
+    const fetchWithTimeout = async (url: string, options: any = {}, timeout = 2500) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal
+        });
+        clearTimeout(id);
+        return response;
+      } catch (error) {
+        clearTimeout(id);
+        throw error;
+      }
+    };
+
     try {
       const bucket = "7b3mwrCjYKfthbbugjqh4k";
       
       // 1. Sync tanks
       try {
-        const res = await fetch(`https://kvdb.io/${bucket}/registered-tanks`);
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/registered-tanks`);
         if (res.ok) {
           const tanksData = await res.json();
           if (Array.isArray(tanksData)) {
@@ -243,7 +270,7 @@ async function startServer() {
 
       // 2. Sync products
       try {
-        const res = await fetch(`https://kvdb.io/${bucket}/registered-products`);
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/registered-products`);
         if (res.ok) {
           const prodData = await res.json();
           if (Array.isArray(prodData)) {
@@ -282,7 +309,7 @@ async function startServer() {
 
       // 3. Sync dispenser-status
       try {
-        const res = await fetch(`https://kvdb.io/${bucket}/latest-dispenser-status`);
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/latest-dispenser-status`);
         if (res.ok) {
           const dData = await res.json();
           if (dData && Array.isArray(dData.dispensers)) {
@@ -329,7 +356,7 @@ async function startServer() {
 
       // 4. Sync fuel-transactions
       try {
-        const res = await fetch(`https://kvdb.io/${bucket}/latest-fuel-transactions`);
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/latest-fuel-transactions`);
         if (res.ok) {
           const txData = await res.json();
           if (Array.isArray(txData)) {
@@ -370,7 +397,7 @@ async function startServer() {
 
       // 5. Sync latest telemetry item under latestTelemetryData
       try {
-        const res = await fetch(`https://kvdb.io/${bucket}/latest-telemetry`);
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/latest-telemetry`);
         if (res.ok) {
           const ltData = await res.json();
           if (ltData && ltData.tank_id) {
@@ -383,7 +410,7 @@ async function startServer() {
 
       // 6. Sync latest alarms
       try {
-        const res = await fetch(`https://kvdb.io/${bucket}/latest-alarms`);
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/latest-alarms`);
         if (res.ok) {
           const laData = await res.json();
           if (Array.isArray(laData)) {
@@ -396,7 +423,7 @@ async function startServer() {
 
       // 7. Sync latest deliveries
       try {
-        const res = await fetch(`https://kvdb.io/${bucket}/latest-deliveries`);
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/latest-deliveries`);
         if (res.ok) {
           const dlData = await res.json();
           if (Array.isArray(dlData)) {
@@ -417,7 +444,7 @@ async function startServer() {
 
       // 8. Sync latest raw ESP32 payloads
       try {
-        const res = await fetch(`https://kvdb.io/${bucket}/esp32-raw-payloads`);
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/esp32-raw-payloads`);
         if (res.ok) {
           const rawLogsData = await res.json();
           if (Array.isArray(rawLogsData)) {
@@ -427,8 +454,12 @@ async function startServer() {
       } catch (e: any) {
         console.warn("[C.E.S.T.I. SYNC] Error fetching latest raw payloads from KVDB:", e?.message || e);
       }
+
+      lastSyncTime = Date.now();
     } catch (err: any) {
       console.error("[C.E.S.T.I. SYNC] Shared KVDB sync completed with errors:", err?.message || err);
+    } finally {
+      isSyncing = false;
     }
   }
 

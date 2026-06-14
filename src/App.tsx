@@ -100,11 +100,7 @@ export default function App() {
         const req = await fetch(localUrl);
         if (req.ok) {
           const res = await req.json();
-          // If the local response is valid JSON, successful, and has populated tanks list or telemetry data,
-          // accept it as the source of truth.
-          const hasTanks = res && res.tanks && res.tanks.length > 0;
-          const hasData = res && res.data;
-          if (res && res.ok && (hasTanks || hasData)) {
+          if (res && res.ok) {
             return res;
           }
         }
@@ -112,7 +108,7 @@ export default function App() {
         console.warn(`Local endpoint ${localUrl} failed, trying fallback:`, e);
       }
 
-      // Try the fallback web endpoint if local fails or has no active data
+      // Try the fallback web endpoint if local fails
       try {
         const req = await fetch(fallbackUrl);
         if (req.ok) {
