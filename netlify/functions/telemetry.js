@@ -220,6 +220,12 @@ exports.handler = async (event, context) => {
       return tid === telemetryRecord.tank_id || (targetAlias && tid === targetAlias);
     });
 
+    let prevVolume = 0;
+    if (fIdx > -1) {
+      const prevTank = fallbackTanks[fIdx];
+      prevVolume = Number(prevTank.volume_liters ?? prevTank.currentVolumeLiters ?? 0);
+    }
+
     if (fIdx > -1) {
       const originalId = fallbackTanks[fIdx].tank_id || fallbackTanks[fIdx].id || telemetryRecord.tank_id;
       fallbackTanks[fIdx] = { 
@@ -236,6 +242,113 @@ exports.handler = async (event, context) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fallbackTanks)
     });
+
+    const diff = Number(telemetryRecord.volume_liters) - prevVolume;
+    if (prevVolume > 0 && diff >= 250) {
+      console.log(`[C.E.S.T.I. NETLIFY AUTO-DELIVERY] ¡Incremento de nivel detectado en el tanque ${telemetryRecord.tank_id}!: +${diff.toFixed(1)} L`);
+      
+      // Let's load existing deliveries to avoid duplicates and append new one
+      let deliveries = [];
+      try {
+        const dGet = await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/latest-deliveries");
+        if (dGet.ok) {
+          deliveries = await dGet.json();
+        }
+      } catch (e) {}
+
+      if (!Array.isArray(deliveries)) {
+        deliveries = [];
+      }
+
+      // Check duplicate within last 10 minutes
+      const tenMinutes = 10 * 60 * 1000;
+      const isDuplicate = deliveries.some(d => 
+        d.tankId === telemetryRecord.tank_id &&
+        d.id.startsWith('DL-AUTO-') &&
+        Math.abs(d.litersDeclared - diff) < 150 &&
+        (Date.now() - new Date(d.timestamp).getTime()) < tenMinutes
+      );
+
+      if (!isDuplicate) {
+        const newDelivery = {
+          id: `DL-AUTO-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          supplier: 'Detección Automática IoT',
+          invoiceNumber: `AUTO-${Math.floor(100000 + Math.random() * 900000)}`,
+          productId: telemetryRecord.product_id || 'GO2',
+          tankId: telemetryRecord.tank_id,
+          litersDeclared: Number(diff.toFixed(1)),
+          litersMeasuredBefore: Number(prevVolume.toFixed(1)),
+          litersMeasuredAfter: Number(telemetryRecord.volume_liters.toFixed(1)),
+          differenceLiters: 0,
+          temperatureC: Number(telemetryRecord.temperature_c || 20),
+          density: Number(telemetryRecord.product_density || 840),
+          operator: 'Sonda de Telemedición SENSINA',
+          notes: `Detección automática: Incremento repentino de +${diff.toFixed(1)} L registrado por la sonda IoT de nivel.`
+        };
+
+        deliveries.unshift(newDelivery);
+        deliveries = deliveries.slice(0, 50);
+
+        // Guardar descargas en KVDB.io y Netlify Blobs
+        try {
+          await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/latest-deliveries", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(deliveries)
+          });
+          const store = getStore({ name: "cesti-telemetry" });
+          await store.setJSON("latest-deliveries", deliveries);
+        } catch (e) {
+          console.warn("[C.E.S.T.I.] Falló persistencia de descarga automática:", e.message);
+        }
+
+        // Crear una alarma automatica
+        let alarms = [];
+        try {
+          const aGet = await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/latest-alarms");
+          if (aGet.ok) {
+            alarms = await aGet.json();
+          }
+        } catch (e) {}
+
+        if (!Array.isArray(alarms)) {
+          alarms = [];
+        }
+
+        const newAlarm = {
+          device_id: telemetryRecord.device_id || "SENSINA-GENERIC-01",
+          site_id: telemetryRecord.site_id || "ESTACION-GENERIC",
+          timestamp: new Date().toISOString(),
+          alarm_id: `ALT-AUTO-DL-${Date.now()}`,
+          alarm_type: 'generic',
+          severity: 'info',
+          source_type: 'tank_sensor',
+          source_id: telemetryRecord.tank_id,
+          message: `Descarga de combustible detectada de forma automática en ${telemetryRecord.tank_name || telemetryRecord.tank_id}: +${diff.toFixed(1)} Litros.`,
+          value: Number(diff.toFixed(1)),
+          unit: 'L',
+          status: 'active'
+        };
+
+        alarms.unshift(newAlarm);
+        alarms = alarms.slice(0, 50);
+
+        try {
+          await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/latest-alarms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(alarms)
+          });
+          const store = getStore({ name: "cesti-telemetry" });
+          await store.setJSON("latest-alarms", alarms);
+        } catch (e) {
+          console.warn("[C.E.S.T.I.] Falló persistencia de alerta automática:", e.message);
+        }
+      } else {
+        console.log(`[C.E.S.T.I. NETLIFY AUTO-DELIVERY] Omitiendo descarga duplicada detectada recientemente para ${telemetryRecord.tank_id}`);
+      }
+    }
 
     await fetch(`https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/tank-telemetry-${telemetryRecord.tank_id}`, {
       method: "POST",

@@ -389,6 +389,37 @@ export default function App() {
       } catch (err) {
         console.warn("[Polling Central IoT Slow] Falló polling de transacciones:", err);
       }
+
+      // Polling de descargas automáticas o manuales registradas en producción (Netlify / Central)
+      const deliveriesUrl = customBase ? `${customBase}/api/latest-deliveries` : '/api/latest-deliveries';
+
+      try {
+        const delsRes = await fetchWithFallback(deliveriesUrl, 'https://velvety-vacherin-c43b91.netlify.app/api/latest-deliveries');
+        if (!isMounted) return;
+
+        if (delsRes && delsRes.ok && Array.isArray(delsRes.data)) {
+          const freshDels = delsRes.data;
+          setData((prev: any) => {
+            let updatedDeliveries = [...prev.deliveries];
+            freshDels.forEach((newDel: any) => {
+              const exists = updatedDeliveries.some((dl: any) => dl.id === newDel.id);
+              if (!exists) {
+                updatedDeliveries.unshift({
+                  ...newDel,
+                  // Ensure formatting and mapping of any missing/raw objects matches standard Delivery type
+                  isLiveIot: true
+                });
+              }
+            });
+            return {
+              ...prev,
+              deliveries: updatedDeliveries.slice(0, 100)
+            };
+          });
+        }
+      } catch (err) {
+        console.warn("[Polling Central IoT Slow] Falló polling de descargas:", err);
+      }
     };
 
     // Lanzar inmediatamente

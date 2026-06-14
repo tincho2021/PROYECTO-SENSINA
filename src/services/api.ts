@@ -104,6 +104,25 @@ export async function fetchAllData() {
       console.warn("Failed to merge latest fuel transactions during fetchAllData", e);
     }
 
+    // Merge latest-deliveries to make sure live automatic/manual deliveries are kept
+    try {
+      const delRes = await fetch('/api/latest-deliveries');
+      if (delRes.ok) {
+        const delData = await delRes.json();
+        if (delData && delData.ok && Array.isArray(delData.data)) {
+          const mergedDel = [...delData.data];
+          (data.deliveries || []).forEach((dl: any) => {
+            if (!mergedDel.some((mDel: any) => mDel.id === dl.id)) {
+              mergedDel.push(dl);
+            }
+          });
+          data.deliveries = mergedDel;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to merge latest deliveries during fetchAllData", e);
+    }
+
     clientDb = data;
     return clientDb;
   } catch (error) {
@@ -140,6 +159,19 @@ export async function fetchAllData() {
       }
     } catch (e) {
       console.warn("Failed fallback fetch of latest fuel transactions", e);
+    }
+
+    // Fallback deliveries fetch to populate deliveries instantly
+    try {
+      const delRes = await fetch('https://velvety-vacherin-c43b91.netlify.app/api/latest-deliveries');
+      if (delRes.ok) {
+        const delData = await delRes.json();
+        if (delData && delData.ok && Array.isArray(delData.data)) {
+          clientDb.deliveries = delData.data;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed fallback fetch of latest deliveries", e);
     }
 
     // Fallback telemetry fetch to populate tanks instantly

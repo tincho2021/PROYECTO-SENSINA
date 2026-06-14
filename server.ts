@@ -392,6 +392,27 @@ async function startServer() {
       } catch (e: any) {
         console.warn("[C.E.S.T.I. SYNC] Error fetching latest alarms from KVDB:", e?.message || e);
       }
+
+      // 7. Sync latest deliveries
+      try {
+        const res = await fetch(`https://kvdb.io/${bucket}/latest-deliveries`);
+        if (res.ok) {
+          const dlData = await res.json();
+          if (Array.isArray(dlData)) {
+            dlData.forEach((kvDel: any) => {
+              const delId = kvDel.id;
+              if (!delId) return;
+              const exists = db.deliveries.some(d => d.id === delId);
+              if (!exists) {
+                db.deliveries.unshift(kvDel);
+              }
+            });
+            db.deliveries = db.deliveries.slice(0, 50);
+          }
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching latest deliveries from KVDB:", e?.message || e);
+      }
     } catch (err: any) {
       console.error("[C.E.S.T.I. SYNC] Shared KVDB sync completed with errors:", err?.message || err);
     }
@@ -452,6 +473,14 @@ async function startServer() {
     res.json({
       ok: true,
       data: latestAlarmsData
+    });
+  });
+
+  app.get('/api/latest-deliveries', async (req, res) => {
+    await syncWithSharedKvdb();
+    res.json({
+      ok: true,
+      data: db.deliveries
     });
   });
 
