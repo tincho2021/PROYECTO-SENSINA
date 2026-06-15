@@ -141,7 +141,7 @@ export default function Dispensers({ data, onRefresh }: DispensersProps) {
 
           return (
             <div 
-              key={d.id} 
+              key={`${d.id}-h${d.hose}`} 
               className={`bg-white rounded-xl border p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between ${
                 isDispensing ? 'ring-2 ring-orange-400' : 'border-slate-100'
               }`}

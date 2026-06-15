@@ -623,7 +623,7 @@ export async function simulateTransactionPost(txn: {
     }
 
     // Free dispenser
-    const disp = clientDb.dispensers.find(d => d.id === txn.dispenser_id);
+    const disp = clientDb.dispensers.find(d => d.id === txn.dispenser_id && d.hose === Number((txn as any).nozzle || (txn as any).hose || 1));
     if (disp) {
       disp.status = 'available';
       disp.lastSaleLiters = txn.liters;
@@ -708,7 +708,7 @@ export async function saveDispenser(dispData: any) {
     return await res.json();
   } catch (err) {
     console.warn('[SENSINA API] Post failed, performing client-side simulation.', err);
-    const existingIndex = clientDb.dispensers.findIndex(d => d.id === dispData.id);
+    const existingIndex = clientDb.dispensers.findIndex(d => d.id === dispData.id && d.hose === Number(dispData.hose || 1));
     const newDisp = {
       id: dispData.id || `DSP-${Date.now()}`,
       siteId: dispData.siteId || 'rosario-01',

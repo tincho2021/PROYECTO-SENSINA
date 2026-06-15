@@ -220,7 +220,9 @@ export default function App() {
             const dispPayload = dispRes.data;
             if (Array.isArray(dispPayload.dispensers)) {
               dispPayload.dispensers.forEach((updatedDisp: any) => {
-                const dispIndex = updatedDispensers.findIndex((origDisp: any) => origDisp.id === updatedDisp.dispenser_id);
+                const dispIndex = updatedDispensers.findIndex((origDisp: any) => 
+                  origDisp.id === updatedDisp.dispenser_id && origDisp.hose === Number(updatedDisp.nozzle || updatedDisp.hose_id || 1)
+                );
                 const existingDisp = dispIndex > -1 ? updatedDispensers[dispIndex] : null;
                 const dispObj = {
                   id: updatedDisp.dispenser_id,

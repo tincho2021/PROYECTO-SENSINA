@@ -356,7 +356,7 @@ async function startServer() {
             latestDispenserStatusData = dData;
             dData.dispensers.forEach((kvDisp: any) => {
               if (!kvDisp.dispenser_id) return;
-              let localDisp = db.dispensers.find(d => d.id === kvDisp.dispenser_id);
+              let localDisp = db.dispensers.find(d => d.id === kvDisp.dispenser_id && d.hose === Number(kvDisp.nozzle || kvDisp.hose_id || 1));
               if (localDisp) {
                 localDisp.status = kvDisp.status ?? localDisp.status;
                 if (kvDisp.last_sale_liters && Number(kvDisp.last_sale_liters) > 0) {
@@ -372,7 +372,7 @@ async function startServer() {
                 localDisp.authorizationMethod = kvDisp.authorization_method ?? localDisp.authorizationMethod;
                 localDisp.lastUpdated = dData.received_at || new Date().toISOString();
               } else {
-                const alreadyExists = db.dispensers.some(d => d.id === kvDisp.dispenser_id);
+                const alreadyExists = db.dispensers.some(d => d.id === kvDisp.dispenser_id && d.hose === Number(kvDisp.nozzle || kvDisp.hose_id || 1));
                 if (!alreadyExists) {
                   db.dispensers.push({
                     id: kvDisp.dispenser_id,
@@ -507,12 +507,13 @@ async function startServer() {
         const uniqueDispensersMap = new Map<string, any>();
         db.dispensers.forEach(disp => {
           if (!disp.id) return;
-          const existing = uniqueDispensersMap.get(disp.id);
+          const mapKey = `${disp.id}_h${disp.hose || 1}`;
+          const existing = uniqueDispensersMap.get(mapKey);
           if (!existing) {
-            uniqueDispensersMap.set(disp.id, disp);
+            uniqueDispensersMap.set(mapKey, disp);
           } else {
             // Merge to preserve non-zero and active values
-            uniqueDispensersMap.set(disp.id, {
+            uniqueDispensersMap.set(mapKey, {
               ...existing,
               ...disp,
               status: ((disp.status as any) === 'dispensing' || (disp.status as any) === 'fueling') ? disp.status : existing.status,
@@ -1424,7 +1425,7 @@ async function startServer() {
     for (const d of dispensers) {
       if (!d.dispenser_id) continue;
 
-      let dbDisp = db.dispensers.find(disp => disp.id === d.dispenser_id);
+      let dbDisp = db.dispensers.find(disp => disp.id === d.dispenser_id && disp.hose === Number(d.nozzle || d.hose_id || d.hose || 1));
       
       const isCurrentlyDispensing = d.status === 'dispensing' || d.status === 'fueling';
       const parsedLiters = isCurrentlyDispensing 
@@ -1582,25 +1583,26 @@ async function startServer() {
     latestDispenserStatusData = {
       device_id: req.body.device_id || "CTRL-SURT-0001",
       site_id: req.body.site_id || "ESTACION-001",
-      timestamp: req.body.timestamp || new Date().toISOString(),
-      dispensers: dispensers.map(disp => {
-        const dProd = db.products.find(p => p.id === disp.product_id) || 
-                      (disp.product_id === 'GO3' ? db.products.find(p => p.id === 'GP') : null);
+      timestamp: new Date().toISOString(),
+      dispensers: db.dispensers.map(disp => {
+        const dProd = db.products.find(p => p.id === disp.productId) || 
+                      (disp.productId === 'GO3' ? db.products.find(p => p.id === 'GP') : null);
+        const isDispensingStatus = (disp.status as any) === 'dispensing' || (disp.status as any) === 'fueling' || disp.status === 'calling';
         return {
-          dispenser_id: disp.dispenser_id,
-          hose_id: disp.hose_id || "M01",
-          nozzle: disp.nozzle || 1,
-          product: dProd ? dProd.name.split(' (')[0] : (disp.product || "Combustible"),
-          product_id: disp.product_id || "GO2",
-          suction_tank_id: disp.suction_tank_id || undefined,
+          dispenser_id: disp.id,
+          hose_id: `M0${disp.hose}`,
+          nozzle: disp.hose,
+          product: dProd ? dProd.name.split(' (')[0] : "Combustible",
+          product_id: disp.productId || "GO2",
+          suction_tank_id: disp.suctionTankId || undefined,
           status: disp.status || "available",
-          last_transaction_id: disp.last_transaction_id || null,
-          last_sale_liters: disp.last_sale_liters || 0,
-          last_sale_amount: disp.last_sale_amount || 0,
-          current_liters: disp.current_liters || 0,
-          current_amount: disp.current_amount || 0,
-          error_code: disp.error_code || null,
-          operator_message: disp.operator_message || "Disponible"
+          last_transaction_id: (disp as any).lastTransactionId || (disp as any).last_transaction_id || null,
+          last_sale_liters: disp.lastSaleLiters || 0,
+          last_sale_amount: disp.lastSaleAmount || 0,
+          current_liters: isDispensingStatus ? disp.lastSaleLiters : 0,
+          current_amount: isDispensingStatus ? disp.lastSaleAmount : 0,
+          error_code: null,
+          operator_message: isDispensingStatus ? "Despachando..." : "Disponible"
         };
       }),
       received_at: new Date().toISOString(),
@@ -1700,7 +1702,7 @@ async function startServer() {
     }
 
     // 3. Release/update dispenser back to available
-    const dispenser = db.dispensers.find(disp => disp.id === dispenser_id);
+    const dispenser = db.dispensers.find(disp => disp.id === dispenser_id && disp.hose === Number(hose || 1));
     if (dispenser) {
       dispenser.status = 'available';
       dispenser.lastSaleLiters = newTx.liters;
@@ -2071,7 +2073,7 @@ async function startServer() {
       return res.status(400).json({ error: 'Nombre y producto son obligatorios.' });
     }
 
-    const existingIndex = db.dispensers.findIndex(d => d.id === dispData.id);
+    const existingIndex = db.dispensers.findIndex(d => d.id === dispData.id && d.hose === Number(dispData.hose || 1));
     const newDisp = {
       id: dispData.id || `DSP-${Date.now()}`,
       siteId: dispData.siteId || 'rosario-01',
