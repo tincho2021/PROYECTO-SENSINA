@@ -2342,6 +2342,17 @@ async function startServer() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify([])
       });
+      // Clear individual tank telemetries in KVDB.io so they aren't combined on fetch
+      const knownTanks = ['tank_01', 'tank_02', 'tank_03', 'TQ-01', 'TQ-02', 'TQ-03'];
+      for (const tankId of knownTanks) {
+        try {
+          await fetch(`https://kvdb.io/${bucket}/tank-telemetry-${tankId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(null)
+          });
+        } catch (err) {}
+      }
     } catch (err: any) {
       console.warn("Could not wipe remote shared KVDB.io keys, local arrays cleared successfuly.", err?.message || err);
     }
