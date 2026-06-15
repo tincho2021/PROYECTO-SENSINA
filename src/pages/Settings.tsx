@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 
 import { formatLiters, formatCurrency } from '../utils/formatters';
-import { saveTank, deleteTank, saveDispenser, deleteDispenser, saveProduct, deleteProduct, resetSystemData, saveUser, deleteUser } from '../services/api';
+import { saveTank, deleteTank, saveDispenser, deleteDispenser, saveProduct, deleteProduct, resetSystemData, wipeSystemData, saveUser, deleteUser } from '../services/api';
 
 import Esp32Live from './Esp32Live';
 import CommunicationsDiag from './CommunicationsDiag';
@@ -212,6 +212,23 @@ export default function Settings({ data, onRefresh, onSimulateTelemetry }: Setti
       onRefresh();
     } catch (e) {
       triggerToast('Fallo al restaurar datos.', true);
+    }
+  };
+
+  // Wipe out all database data to start from a completely clean slate
+  const handleWipeSystemData = async () => {
+    if (!window.confirm('¿ATENCIÓN CRÍTICA: Seguro que desea borrar absolutamente toda la información de la plataforma?\n\nEsto eliminará todas las cisternas, despachos, vehículos, choferes, alertas e histórico de telemetría de forma permanente. La plataforma quedará completamente vacía para iniciar con un nuevo cliente.')) {
+      return;
+    }
+    if (!window.confirm('¿Confirma que desea proceder con el borrado definitivo? Esta acción NO se puede deshacer.')) {
+      return;
+    }
+    try {
+      await wipeSystemData();
+      triggerToast('Éxito: Plataforma vaciada por completo. Todos los registros fueron eliminados.');
+      onRefresh();
+    } catch (e) {
+      triggerToast('Fallo al vaciar los datos de la plataforma.', true);
     }
   };
 
@@ -411,10 +428,18 @@ export default function Settings({ data, onRefresh, onSimulateTelemetry }: Setti
           <p className="text-xs text-slate-500">Gestione la arquitectura física, telemetría de cisternas, dispensadores de playón y catálogo de combustibles.</p>
         </div>
 
-        <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleWipeSystemData}
+            className="cursor-pointer bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all shadow-sm font-sans"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            VACIAR PLATAFORMA (EMPEZAR DE CERO)
+          </button>
+
           <button
             onClick={handleResetSystemData}
-            className="cursor-pointer bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 hover:text-red-800 text-[11px] font-bold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all font-mono"
+            className="cursor-pointer bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-800 text-[11px] font-bold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all font-mono"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             RESET FACTORY DEFAULT

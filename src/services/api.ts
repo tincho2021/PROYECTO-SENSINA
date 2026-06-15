@@ -829,6 +829,33 @@ export async function resetSystemData() {
 }
 
 /**
+ * Wipes out all saved data to start from a completely clean slate
+ */
+export async function wipeSystemData() {
+  try {
+    const res = await fetch('/api/wipe-all-data', { method: 'POST' });
+    return await res.json();
+  } catch (err) {
+    clientDb = {
+      sites: [] as any[],
+      products: [] as any[],
+      tanks: [] as Tank[],
+      dispensers: [] as Dispenser[],
+      drivers: [] as any[],
+      vehicles: [] as any[],
+      transactions: [] as FuelTransaction[],
+      deliveries: [] as Delivery[],
+      reconciliations: [] as InventoryReconciliation[],
+      alerts: [] as Alert[],
+      devices: [] as any[],
+      users: [...mockUsers],
+      auditLogs: [] as AuditLog[]
+    };
+    return { success: true };
+  }
+}
+
+/**
  * Save or update User
  */
 export async function saveUser(userData: any) {

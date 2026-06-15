@@ -2276,6 +2276,79 @@ async function startServer() {
     res.json({ success: true, message: 'Base de datos simulada restaurada a valores predeterminados.' });
   });
 
+  // Wipe database state completely to start clean from zero (e.g. for new clients)
+  app.post('/api/wipe-all-data', async (req, res) => {
+    db.sites = [];
+    db.products = [];
+    db.tanks = [];
+    db.dispensers = [];
+    db.drivers = [];
+    db.vehicles = [];
+    db.transactions = [];
+    db.deliveries = [];
+    db.reconciliations = [];
+    db.alerts = [];
+    db.devices = [];
+    db.auditLogs = [];
+    db.esp32RawLogs = [];
+    db.users = [...mockUsers]; // Keep default admin users so the session can continue without lockout
+
+    latestTelemetryData = null;
+    latestFuelTransactionsData = [];
+    latestDispenserStatusData = null;
+    latestAlarmsData = [];
+
+    // Also clear the persistent shared KVDB.io bucket so automatic background sync
+    // doesn't bring back old data values on next dashboard refresh
+    try {
+      const bucket = "7b3mwrCjYKfthbbugjqh4k";
+      await fetch(`https://kvdb.io/${bucket}/registered-tanks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+      await fetch(`https://kvdb.io/${bucket}/registered-products`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+      await fetch(`https://kvdb.io/${bucket}/latest-dispenser-status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_id: "CTRL-SURT-0001", site_id: "ESTACION-001", dispensers: [] })
+      });
+      await fetch(`https://kvdb.io/${bucket}/latest-fuel-transactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+      await fetch(`https://kvdb.io/${bucket}/latest-telemetry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(null)
+      });
+      await fetch(`https://kvdb.io/${bucket}/latest-alarms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+      await fetch(`https://kvdb.io/${bucket}/latest-deliveries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+      await fetch(`https://kvdb.io/${bucket}/esp32-raw-payloads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+    } catch (err: any) {
+      console.warn("Could not wipe remote shared KVDB.io keys, local arrays cleared successfuly.", err?.message || err);
+    }
+
+    res.json({ success: true, message: 'Todos los datos de playón, tanques y despachos físicos han sido borrados de raíz.' });
+  });
+
   // --- VITE MIDDLEWARE CONFIGURATION ---
 
   if (process.env.NODE_ENV !== 'production') {
