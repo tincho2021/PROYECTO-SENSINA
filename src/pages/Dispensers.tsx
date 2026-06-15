@@ -170,14 +170,20 @@ export default function Dispensers({ data, onRefresh }: DispensersProps) {
                   </div>
 
                   {/* Liters and amount */}
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200/50">
+                  <div className={`p-2.5 rounded border ${isDispensing ? 'bg-orange-50/40 border-orange-200/50' : 'bg-slate-50 border-slate-200/50'}`}>
                     <div className="flex justify-between items-baseline">
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase">Último Despacho</span>
-                      <span className="text-lg font-black text-slate-800 font-mono">{formatLiters(d.lastSaleLiters)}</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${isDispensing ? 'text-orange-600 animate-pulse' : 'text-slate-400'}`}>
+                        {isDispensing ? '🔥 Despachando...' : 'Último Despacho'}
+                      </span>
+                      <span className={`text-lg font-black font-mono ${isDispensing ? 'text-orange-700 animate-pulse' : 'text-slate-800'}`}>
+                        {formatLiters(d.lastSaleLiters)}
+                      </span>
                     </div>
-                    <div className="flex justify-between mt-1 text-[11px] text-slate-500 font-mono">
-                      <span>Importe Total:</span>
-                      <span className="font-bold">{formatCurrency(d.lastSaleAmount)}</span>
+                    <div className="flex justify-between mt-1 text-[11px] font-mono text-slate-500">
+                      <span>{isDispensing ? 'Monto Parcial:' : 'Importe Total:'}</span>
+                      <span className={`font-bold ${isDispensing ? 'text-orange-700' : 'text-slate-700'}`}>
+                        {formatCurrency(d.lastSaleAmount)}
+                      </span>
                     </div>
                   </div>
 
