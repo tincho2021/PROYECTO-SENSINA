@@ -221,6 +221,7 @@ export default function App() {
             if (Array.isArray(dispPayload.dispensers)) {
               dispPayload.dispensers.forEach((updatedDisp: any) => {
                 const dispIndex = updatedDispensers.findIndex((origDisp: any) => origDisp.id === updatedDisp.dispenser_id);
+                const existingDisp = dispIndex > -1 ? updatedDispensers[dispIndex] : null;
                 const dispObj = {
                   id: updatedDisp.dispenser_id,
                   siteId: dispPayload.site_id || "rosario-01",
@@ -229,8 +230,12 @@ export default function App() {
                   productId: updatedDisp.product_id || "GO2",
                   suctionTankId: updatedDisp.suction_tank_id || undefined,
                   status: updatedDisp.status === 'fueling' ? 'dispensing' : (updatedDisp.status || "available"),
-                  lastSaleLiters: updatedDisp.last_sale_liters || 0,
-                  lastSaleAmount: updatedDisp.last_sale_amount || 0,
+                  lastSaleLiters: (updatedDisp.last_sale_liters && Number(updatedDisp.last_sale_liters) > 0)
+                    ? Number(updatedDisp.last_sale_liters)
+                    : (existingDisp ? existingDisp.lastSaleLiters || 0 : 0),
+                  lastSaleAmount: (updatedDisp.last_sale_amount && Number(updatedDisp.last_sale_amount) > 0)
+                    ? Number(updatedDisp.last_sale_amount)
+                    : (existingDisp ? existingDisp.lastSaleAmount || 0 : 0),
                   activeDriver: updatedDisp.driver || undefined,
                   activeVehicle: updatedDisp.vehicle || undefined,
                   activePlate: updatedDisp.plate || undefined,

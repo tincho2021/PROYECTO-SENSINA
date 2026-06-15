@@ -319,8 +319,12 @@ async function startServer() {
               let localDisp = db.dispensers.find(d => d.id === kvDisp.dispenser_id);
               if (localDisp) {
                 localDisp.status = kvDisp.status ?? localDisp.status;
-                localDisp.lastSaleLiters = kvDisp.last_sale_liters ?? localDisp.lastSaleLiters;
-                localDisp.lastSaleAmount = kvDisp.last_sale_amount ?? localDisp.lastSaleAmount;
+                if (kvDisp.last_sale_liters && Number(kvDisp.last_sale_liters) > 0) {
+                  localDisp.lastSaleLiters = Number(kvDisp.last_sale_liters);
+                }
+                if (kvDisp.last_sale_amount && Number(kvDisp.last_sale_amount) > 0) {
+                  localDisp.lastSaleAmount = Number(kvDisp.last_sale_amount);
+                }
                 localDisp.activeDriver = kvDisp.driver ?? localDisp.activeDriver;
                 localDisp.activeVehicle = kvDisp.vehicle ?? localDisp.activeVehicle;
                 localDisp.activePlate = kvDisp.plate ?? localDisp.activePlate;
@@ -328,24 +332,27 @@ async function startServer() {
                 localDisp.authorizationMethod = kvDisp.authorization_method ?? localDisp.authorizationMethod;
                 localDisp.lastUpdated = dData.received_at || new Date().toISOString();
               } else {
-                db.dispensers.push({
-                  id: kvDisp.dispenser_id,
-                  siteId: dData.site_id || "rosario-01",
-                  name: `Surtidor ${kvDisp.dispenser_id.replace(/[_-]/g, ' ')}`,
-                  hose: Number(kvDisp.nozzle || kvDisp.hose_id || 1),
-                  productId: kvDisp.product_id || "GO2",
-                  suctionTankId: kvDisp.suction_tank_id || undefined,
-                  status: kvDisp.status || 'available',
-                  lastSaleLiters: Number(kvDisp.last_sale_liters || 0),
-                  lastSaleAmount: Number(kvDisp.last_sale_amount || 0),
-                  activeDriver: kvDisp.driver || undefined,
-                  activeVehicle: kvDisp.vehicle || undefined,
-                  activePlate: kvDisp.plate || undefined,
-                  odometerReading: kvDisp.odometer || undefined,
-                  authorizationMethod: kvDisp.authorization_method || 'RFID',
-                  lastUpdated: dData.received_at || new Date().toISOString(),
-                  createdAt: new Date().toISOString()
-                } as any);
+                const alreadyExists = db.dispensers.some(d => d.id === kvDisp.dispenser_id);
+                if (!alreadyExists) {
+                  db.dispensers.push({
+                    id: kvDisp.dispenser_id,
+                    siteId: dData.site_id || "rosario-01",
+                    name: `Surtidor ${kvDisp.dispenser_id.replace(/[_-]/g, ' ')}`,
+                    hose: Number(kvDisp.nozzle || kvDisp.hose_id || 1),
+                    productId: kvDisp.product_id || "GO2",
+                    suctionTankId: kvDisp.suction_tank_id || undefined,
+                    status: kvDisp.status || 'available',
+                    lastSaleLiters: Number(kvDisp.last_sale_liters || 0),
+                    lastSaleAmount: Number(kvDisp.last_sale_amount || 0),
+                    activeDriver: kvDisp.driver || undefined,
+                    activeVehicle: kvDisp.vehicle || undefined,
+                    activePlate: kvDisp.plate || undefined,
+                    odometerReading: kvDisp.odometer || undefined,
+                    authorizationMethod: kvDisp.authorization_method || 'RFID',
+                    lastUpdated: dData.received_at || new Date().toISOString(),
+                    createdAt: new Date().toISOString()
+                  } as any);
+                }
               }
             });
           }
@@ -453,6 +460,44 @@ async function startServer() {
         }
       } catch (e: any) {
         console.warn("[C.E.S.T.I. SYNC] Error fetching latest raw payloads from KVDB:", e?.message || e);
+      }
+
+      // In-memory deduplication & clean up of dispensers and transactions in db
+      if (db.dispensers && db.dispensers.length > 0) {
+        const uniqueDispensersMap = new Map<string, any>();
+        db.dispensers.forEach(disp => {
+          if (!disp.id) return;
+          const existing = uniqueDispensersMap.get(disp.id);
+          if (!existing) {
+            uniqueDispensersMap.set(disp.id, disp);
+          } else {
+            // Merge to preserve non-zero and active values
+            uniqueDispensersMap.set(disp.id, {
+              ...existing,
+              ...disp,
+              status: ((disp.status as any) === 'dispensing' || (disp.status as any) === 'fueling') ? disp.status : existing.status,
+              lastSaleLiters: (disp.lastSaleLiters && Number(disp.lastSaleLiters) > 0) ? Number(disp.lastSaleLiters) : existing.lastSaleLiters,
+              lastSaleAmount: (disp.lastSaleAmount && Number(disp.lastSaleAmount) > 0) ? Number(disp.lastSaleAmount) : existing.lastSaleAmount,
+              activeDriver: disp.activeDriver || existing.activeDriver,
+              activeVehicle: disp.activeVehicle || existing.activeVehicle,
+              activePlate: disp.activePlate || existing.activePlate,
+              odometerReading: disp.odometerReading || existing.odometerReading,
+            });
+          }
+        });
+        db.dispensers = Array.from(uniqueDispensersMap.values());
+      }
+
+      if (db.transactions && db.transactions.length > 0) {
+        const uniqueTransactionsMap = new Map<string, any>();
+        db.transactions.forEach(tx => {
+          if (!tx.id) return;
+          // Keep the first encountered (or most detailed/recent transaction)
+          if (!uniqueTransactionsMap.has(tx.id)) {
+            uniqueTransactionsMap.set(tx.id, tx);
+          }
+        });
+        db.transactions = Array.from(uniqueTransactionsMap.values());
       }
 
       lastSyncTime = Date.now();
@@ -1355,8 +1400,12 @@ async function startServer() {
         console.log(`[C.E.S.T.I. AUTO-CONFIG] Registrado nuevo surtidor on-the-fly: ${d.dispenser_id}`);
       } else {
         dbDisp.status = d.status ?? dbDisp.status;
-        dbDisp.lastSaleLiters = d.last_sale_liters ?? dbDisp.lastSaleLiters;
-        dbDisp.lastSaleAmount = d.last_sale_amount ?? dbDisp.lastSaleAmount;
+        if (d.last_sale_liters && Number(d.last_sale_liters) > 0) {
+          dbDisp.lastSaleLiters = Number(d.last_sale_liters);
+        }
+        if (d.last_sale_amount && Number(d.last_sale_amount) > 0) {
+          dbDisp.lastSaleAmount = Number(d.last_sale_amount);
+        }
         dbDisp.activeDriver = d.driver ?? dbDisp.activeDriver;
         dbDisp.activeVehicle = d.vehicle ?? dbDisp.activeVehicle;
         dbDisp.activePlate = d.plate ?? dbDisp.activePlate;
@@ -1386,7 +1435,7 @@ async function startServer() {
           }
         }
 
-        const txId = d.last_transaction_id || `TX-AUTO-${d.dispenser_id}-${Math.round(d.last_sale_liters * 105)}-${new Date().toISOString().split('T')[0]}`;
+        const txId = d.last_transaction_id || `TX-AUTO-${d.dispenser_id}-${Math.round(d.last_sale_liters * 100)}-${new Date().toISOString().split('T')[0]}`;
         const hasTx = db.transactions.some(tx => tx.id === txId);
         const hasDupe = db.transactions.some(tx => 
           tx.dispenserId === d.dispenser_id && 
