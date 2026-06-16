@@ -121,8 +121,13 @@ export default function App() {
       return null;
     };
 
-    // Polling rápido para parámetros de sonda, surtidores y alarmas (cada 5 segundos)
+    // Polling rápido para parámetros de sonda, surtidores y alarmas (cada 15 segundos)
     const pollFastIot = async () => {
+      // Evitar llamadas de API si la pestaña o ventana está inactiva/oculta en el navegador
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+
       // Obtener URL base personalizada de localStorage si existe
       let customBase = '';
       if (typeof window !== 'undefined') {
@@ -336,8 +341,13 @@ export default function App() {
       }
     };
 
-    // Polling más lento para transacciones y despachos de combustible (cada 10 segundos)
+    // Polling más lento para transacciones y despachos de combustible (cada 30 segundos)
     const pollSlowIot = async () => {
+      // Evitar llamadas de API si la pestaña o ventana está inactiva/oculta en el navegador
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+
       // Obtener URL base personalizada de localStorage si existe
       let customBase = '';
       if (typeof window !== 'undefined') {
@@ -429,8 +439,8 @@ export default function App() {
     pollFastIot();
     pollSlowIot();
 
-    const fastInterval = setInterval(pollFastIot, 5000);
-    const slowInterval = setInterval(pollSlowIot, 10000);
+    const fastInterval = setInterval(pollFastIot, 15000);
+    const slowInterval = setInterval(pollSlowIot, 30000);
 
     return () => {
       isMounted = false;

@@ -932,6 +932,11 @@ export default function Esp32Live() {
   };
 
   const pollTelemetry = async () => {
+    // Evitar llamadas de API si la pestaña o ventana está inactiva/oculta en el navegador
+    if (typeof document !== 'undefined' && document.hidden) {
+      return;
+    }
+
     const data = await fetchLatestTelemetry();
     if (data) {
       setLatestTelemetry(data);
@@ -957,7 +962,7 @@ export default function Esp32Live() {
     pollTelemetry();
     let intervalId: NodeJS.Timeout | null = null;
     if (isPollingActive) {
-      intervalId = setInterval(pollTelemetry, 4000);
+      intervalId = setInterval(pollTelemetry, 10000);
     }
     return () => {
       if (intervalId) clearInterval(intervalId);
