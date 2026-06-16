@@ -298,12 +298,94 @@ export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProp
   const g3Name = products.find((p: any) => p.id === 'GP')?.name?.split(' (')[0] || 'Gasoil G3';
   const nsName = products.find((p: any) => p.id === 'NS')?.name?.split(' (')[0] || 'Nafta Súper';
 
-  const dynamicHistoricalData = mockHistoricalStockData.map((item: any) => ({
-    name: item.name,
-    [`${g2Name} (L)`]: item["Gasoil G2 (L)"],
-    [`${g3Name} (L)`]: item["Gasoil G3 (L)"],
-    [`${nsName} (L)`]: item["Nafta Súper (L)"]
-  }));
+  // Check if there are any completed transactions from preceding days. 
+  // If not, it means the database has been wiped clean / reset to start fresh of today (15/6)
+  const hasHistory = transactions.length > 0 && transactions.some((tx: any) => {
+    const txDate = new Date(tx.createdAt || tx.timestampStart);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return txDate < today;
+  });
+
+  // Stock history timeline of the last 15 days
+  const dynamicHistoricalData = mockHistoricalStockData.map((item: any, idx: number) => {
+    if (hasHistory && tanks.length > 0) {
+      // Simulation/demo mode is active: Use predefined mock trend curves
+      return {
+        name: item.name,
+        [`${g2Name} (L)`]: item["Gasoil G2 (L)"],
+        [`${g3Name} (L)`]: item["Gasoil G3 (L)"],
+        [`${nsName} (L)`]: item["Nafta Súper (L)"]
+      };
+    } else {
+      // Clean start/wiped mode - There are no prior records.
+      // Set previous days to 0 and show the current tank volume on the final day (today)
+      const isToday = idx === 14;
+      
+      const g2Vol = tanks.filter((t: any) => t.productId === 'GO2').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+      const g3Vol = tanks.filter((t: any) => t.productId === 'GP').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+      const nsVol = tanks.filter((t: any) => t.productId === 'NS').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+
+      return {
+        name: item.name,
+        [`${g2Name} (L)`]: isToday ? g2Vol : 0,
+        [`${g3Name} (L)`]: isToday ? g3Vol : 0,
+        [`${nsName} (L)`]: isToday ? nsVol : 0
+      };
+    }
+  });
+
+  // Daily consumption per branch timeline matching the last 14 days
+  const dynamicDailyConsumptionData = mockDailyConsumptionData.map((item: any, idx: number) => {
+    if (hasHistory) {
+      // Simulation/demo mode is active: Use predefined mock consumption
+      return item;
+    } else {
+      // Clean start/wiped mode - Set previous days to 0.
+      // Calculate today's real volume dispensed from live transactions.
+      const isToday = idx === mockDailyConsumptionData.length - 1;
+      
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const getSumForSite = (siteKeys: string[]) => {
+        return transactions
+          .filter((tx: any) => {
+            const isCompleted = tx.status === 'completed';
+            const txDate = new Date(tx.createdAt || tx.timestampStart);
+            const isTodayTx = txDate >= todayStart;
+            // Map sites dynamically
+            const siteNameMatch = siteKeys.some(k => 
+              (tx.siteId && String(tx.siteId).toLowerCase().includes(k.toLowerCase())) ||
+              (tx.siteName && String(tx.siteName).toLowerCase().includes(k.toLowerCase())) ||
+              (tx.dispenserId && String(tx.dispenserId).toLowerCase().includes(k.toLowerCase()))
+            );
+            return isCompleted && isTodayTx && siteNameMatch;
+          })
+          .reduce((sum: number, tx: any) => sum + (tx.liters || 0), 0);
+      };
+
+      // If there are transactions today but without specific site, default them to Rosario (main branch)
+      const unfilteredToday = transactions
+        .filter((tx: any) => tx.status === 'completed' && new Date(tx.createdAt || tx.timestampStart) >= todayStart)
+        .reduce((sum: number, tx: any) => sum + (tx.liters || 0), 0);
+
+      let rosarioLiters = getSumForSite(['rosario', 'norte', 'ESTACION-001', 'surt', 'ctrl']);
+      if (rosarioLiters === 0 && unfilteredToday > 0) {
+        rosarioLiters = unfilteredToday;
+      }
+
+      const bahiaLiters = getSumForSite(['bahía', 'bahia', 'sur', 'ESTACION-002']);
+      const lujanLiters = getSumForSite(['luján', 'lujan', 'oeste', 'ESTACION-003']);
+
+      return {
+        name: item.name,
+        Rosario: isToday ? rosarioLiters : 0,
+        "Bahía Blanca": isToday ? bahiaLiters : 0,
+        Luján: isToday ? lujanLiters : 0
+      };
+    }
+  });
 
   // 1. KPI Calculations
   const totalLitersAvailable = tanks.reduce((sum: number, t: any) => sum + t.currentVolumeLiters, 0);
@@ -597,7 +679,7 @@ export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProp
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mockDailyConsumptionData}>
+              <BarChart data={dynamicDailyConsumptionData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eff4f6" />
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
                 <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
