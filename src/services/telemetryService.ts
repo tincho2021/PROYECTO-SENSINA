@@ -29,8 +29,9 @@ export async function fetchLatestTelemetry(): Promise<TelemetryPayload | null> {
     const response = await fetch(localUrl);
     if (response.ok) {
       const result: TelemetryResponse = await response.json();
-      if (result && result.ok && result.data) {
-        return result.data;
+      if (result && result.ok) {
+        // Retornar datos del servidor local (aunque estén vacíos o en 0 por estar apagado/borrado)
+        return result.data || null;
       }
     }
   } catch (error) {

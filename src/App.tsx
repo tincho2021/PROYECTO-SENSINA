@@ -123,11 +123,6 @@ export default function App() {
 
     // Polling rápido para parámetros de sonda, surtidores y alarmas (cada 15 segundos)
     const pollFastIot = async () => {
-      // Evitar llamadas de API si la pestaña o ventana está inactiva/oculta en el navegador
-      if (typeof document !== 'undefined' && document.hidden) {
-        return;
-      }
-
       // Obtener URL base personalizada de localStorage si existe
       let customBase = '';
       if (typeof window !== 'undefined') {
@@ -343,11 +338,6 @@ export default function App() {
 
     // Polling más lento para transacciones y despachos de combustible (cada 30 segundos)
     const pollSlowIot = async () => {
-      // Evitar llamadas de API si la pestaña o ventana está inactiva/oculta en el navegador
-      if (typeof document !== 'undefined' && document.hidden) {
-        return;
-      }
-
       // Obtener URL base personalizada de localStorage si existe
       let customBase = '';
       if (typeof window !== 'undefined') {

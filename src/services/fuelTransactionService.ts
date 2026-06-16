@@ -29,8 +29,10 @@ export async function fetchLatestFuelTransactions(): Promise<FuelTransactionPayl
     const response = await fetch(localUrl);
     if (response.ok) {
       const result: any = await response.json();
-      if (result && result.ok && result.data) {
-        return Array.isArray(result.data) ? result.data : [result.data];
+      if (result && result.ok) {
+        // Retornar datos del servidor local (aunque estén vacíos)
+        const data = result.data || [];
+        return Array.isArray(data) ? data : [data];
       }
     }
   } catch (error) {

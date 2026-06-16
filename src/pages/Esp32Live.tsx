@@ -932,11 +932,6 @@ export default function Esp32Live() {
   };
 
   const pollTelemetry = async () => {
-    // Evitar llamadas de API si la pestaña o ventana está inactiva/oculta en el navegador
-    if (typeof document !== 'undefined' && document.hidden) {
-      return;
-    }
-
     const data = await fetchLatestTelemetry();
     if (data) {
       setLatestTelemetry(data);
