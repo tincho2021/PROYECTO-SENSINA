@@ -42,13 +42,15 @@ interface SettingsProps {
   data: any;
   onRefresh: () => void;
   onSimulateTelemetry: (payload: any) => Promise<any>;
+  whiteLabel?: any;
+  onUpdateWhiteLabel?: (newBranding: any) => void;
 }
 
-export default function Settings({ data, onRefresh, onSimulateTelemetry }: SettingsProps) {
+export default function Settings({ data, onRefresh, onSimulateTelemetry, whiteLabel, onUpdateWhiteLabel }: SettingsProps) {
   // Extract data arrays from props
   const { tanks = [], products = [], dispensers = [], users = [], sites = [] } = data || {};
 
-  const [activeSubTab, setActiveSubTab] = useState<'hardware' | 'tanks' | 'dispensers' | 'products' | 'esp32_live' | 'comms_diag' | 'users'>('hardware');
+  const [activeSubTab, setActiveSubTab] = useState<'hardware' | 'tanks' | 'dispensers' | 'products' | 'esp32_live' | 'comms_diag' | 'users' | 'branding'>('hardware');
 
   // Corporate Profile Setup states
   const [companyName, setCompanyName] = useState('SENSINA Logistics SA');
@@ -102,6 +104,75 @@ export default function Settings({ data, onRefresh, onSimulateTelemetry }: Setti
   const [userRole, setUserRole] = useState<'admin' | 'supervisor' | 'operator' | 'technician'>('operator');
   const [userSiteId, setUserSiteId] = useState('ESTACION-001');
   const [userActive, setUserActive] = useState(true);
+
+  // --- CONFIGURACIÓN DE MARCA BLANCA / WHITE-LABEL ---
+  const initialBranding = whiteLabel || {
+    platformName: 'C.E.S.T.I.',
+    tagline: 'TELEMETRÍA',
+    logoType: 'emoji', // 'icon' | 'emoji' | 'url' | 'base64'
+    logoIcon: 'C',
+    logoEmoji: '⛽',
+    logoUrl: '',
+    logoBase64: '',
+    primaryColor: 'teal',
+    supportEmail: 'soporte@cesti.com.ar',
+    supportPhone: '+54 9 11 1234-5678',
+    footerCompany: 'C.E.S.T.I. S.A.',
+    hideSensinaBranding: false
+  };
+
+  const [brandPlatformName, setBrandPlatformName] = useState(initialBranding.platformName);
+  const [brandTagline, setBrandTagline] = useState(initialBranding.tagline);
+  const [brandLogoType, setBrandLogoType] = useState<'icon' | 'emoji' | 'url' | 'base64'>(initialBranding.logoType);
+  const [brandLogoIcon, setBrandLogoIcon] = useState(initialBranding.logoIcon);
+  const [brandLogoEmoji, setBrandLogoEmoji] = useState(initialBranding.logoEmoji);
+  const [brandLogoUrl, setBrandLogoUrl] = useState(initialBranding.logoUrl);
+  const [brandLogoBase64, setBrandLogoBase64] = useState(initialBranding.logoBase64);
+  const [brandPrimaryColor, setBrandPrimaryColor] = useState(initialBranding.primaryColor);
+  const [brandSupportEmail, setBrandSupportEmail] = useState(initialBranding.supportEmail);
+  const [brandSupportPhone, setBrandSupportPhone] = useState(initialBranding.supportPhone);
+  const [brandFooterCompany, setBrandFooterCompany] = useState(initialBranding.footerCompany);
+  const [brandHideSensina, setBrandHideSensina] = useState(initialBranding.hideSensinaBranding ?? false);
+
+  const handleSaveBranding = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updated = {
+      platformName: brandPlatformName,
+      tagline: brandTagline,
+      logoType: brandLogoType,
+      logoIcon: brandLogoIcon,
+      logoEmoji: brandLogoEmoji,
+      logoUrl: brandLogoUrl,
+      logoBase64: brandLogoBase64,
+      primaryColor: brandPrimaryColor,
+      supportEmail: brandSupportEmail,
+      supportPhone: brandSupportPhone,
+      footerCompany: brandFooterCompany,
+      hideSensinaBranding: brandHideSensina
+    };
+    if (onUpdateWhiteLabel) {
+      onUpdateWhiteLabel(updated);
+      triggerToast('Configuración de Marca Blanca guardada con éxito. El sistema se ha personalizado por completo.');
+    } else {
+      triggerToast('Error: El gestor de estado superior no está disponible.', true);
+    }
+  };
+
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        triggerToast('Error: El archivo supera el tamaño máximo de 2 MB.', true);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setBrandLogoBase64(reader.result as string);
+        triggerToast('Imagen convertida a Base64 con éxito. Guarde para aplicar.');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -543,6 +614,18 @@ export default function Settings({ data, onRefresh, onSimulateTelemetry }: Setti
         >
           <Users className="w-4 h-4 text-teal-600" />
           <span>Gestión de Usuarios ({users.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('branding')}
+          className={`cursor-pointer px-4 py-2 text-xs font-bold rounded-md transition-all flex items-center gap-2 ${
+            activeSubTab === 'branding'
+              ? 'bg-white text-teal-700 shadow-sm border-b-2 border-teal-600'
+              : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+          }`}
+        >
+          <Tag className="w-4 h-4 text-emerald-600 animate-pulse" />
+          <span>Marca Blanca / Custom Logo</span>
         </button>
       </div>
 
@@ -1445,6 +1528,289 @@ export default function Settings({ data, onRefresh, onSimulateTelemetry }: Setti
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* 5. WHITE LABEL BRANDING CUSTOMISATION SUBTAB */}
+      {activeSubTab === 'branding' && (
+        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm font-sans space-y-6">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+            <span className="p-2.5 rounded-full bg-emerald-55 text-emerald-700">
+              <Tag className="w-5 h-5 animate-pulse" />
+            </span>
+            <div>
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">CONFIGURACIÓN DE MARCA BLANCA / DISTRIBUIDOR</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Personalice la plataforma con la identidad corporativa de su empresa o clientes (Logotipos, Nombre, Eslogan, Colores y Contactos de Soporte).</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveBranding} className="space-y-6 text-xs font-semibold text-slate-600">
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Seccion 1 - Identidad Visual y Nombres */}
+              <div className="space-y-4">
+                <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">01. Identidad de Marca</span>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-slate-400 mb-1">Nombre Comercial de la Plataforma</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej. C.E.S.T.I."
+                      value={brandPlatformName}
+                      onChange={(e) => setBrandPlatformName(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded focus:outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-1 block font-medium">Reemplaza el nombre de la esquina superior izquierda.</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">Eslogan o Subtítulo Operativo</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej. TELEMETRÍA"
+                      value={brandTagline}
+                      onChange={(e) => setBrandTagline(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded focus:outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-1 block font-medium">Se muestra debajo del nombre comercial de la plataforma.</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block text-slate-400 font-bold">Tipo de Logotipo a Utilizar</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { key: 'emoji', label: '⛽ Emoji Combustible' },
+                      { key: 'icon', label: '🔠 Inicial Textual' },
+                      { key: 'url', label: '🌐 URL de Imagen' },
+                      { key: 'base64', label: '📂 Archivo PNG/JPG' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setBrandLogoType(item.key as any)}
+                        className={`cursor-pointer p-2.5 rounded border text-center transition-all ${
+                          brandLogoType === item.key
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-500 font-bold shadow-2xs'
+                            : 'bg-slate-50 text-slate-550 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* dynamic Logo Input options based on type */}
+                {brandLogoType === 'emoji' && (
+                  <div>
+                    <label className="block text-slate-400 mb-1">Emoji del Logo</label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      value={brandLogoEmoji}
+                      onChange={(e) => setBrandLogoEmoji(e.target.value)}
+                      className="w-full sm:w-1/3 p-2.5 bg-slate-50 border border-slate-200 rounded focus:outline-none font-sans text-lg text-center"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-1 block font-medium">Ej: ⛽, ⚡, 💧, 🚛, 🏭, 💼 para dar estilo instantáneo sin subir archivos.</span>
+                  </div>
+                )}
+
+                {brandLogoType === 'icon' && (
+                  <div>
+                    <label className="block text-slate-400 mb-1">Letra Inicial Representativa (1 caracter)</label>
+                    <input
+                      type="text"
+                      maxLength={1}
+                      placeholder="C"
+                      value={brandLogoIcon}
+                      onChange={(e) => setBrandLogoIcon(e.target.value)}
+                      className="w-full sm:w-1/3 p-2.5 bg-slate-50 border border-slate-200 rounded focus:outline-none font-mono text-center text-md font-bold uppercase"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-1 block font-medium">Ej: "C" para CESTI, "S" para SENSINA, "L" para Logística, etc.</span>
+                  </div>
+                )}
+
+                {brandLogoType === 'url' && (
+                  <div>
+                    <label className="block text-slate-400 mb-1">URL de Imagen del Logotipo Web</label>
+                    <input
+                      type="url"
+                      placeholder="https://su-distribuidora.com/logo.png"
+                      value={brandLogoUrl}
+                      onChange={(e) => setBrandLogoUrl(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded focus:outline-none font-mono"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-1 block font-medium">Debe ser un enlace HTTPS público directo a una imagen cuadrada de aprox 64x64px.</span>
+                  </div>
+                )}
+
+                {brandLogoType === 'base64' && (
+                  <div className="space-y-2">
+                    <label className="block text-slate-400">Subir Archivo de Logo Corporativo (Max. 2 MB)</label>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                      <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 py-2 px-3 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors w-fit">
+                        <span>Seleccionar Imagen...</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoFileChange}
+                          className="hidden"
+                        />
+                      </label>
+                      {brandLogoBase64 ? (
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={brandLogoBase64}
+                            alt="Logo Vista Previa"
+                            className="w-10 h-10 object-contain rounded bg-slate-50 border border-slate-200 p-1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setBrandLogoBase64('')}
+                            className="text-red-650 hover:text-red-850 text-[10px] font-bold underline cursor-pointer"
+                          >
+                            Eliminar imagen
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-medium font-mono">Ninguna imagen cargada para Marca Blanca.</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Seccion 2 - Color del Tema y Soporte */}
+              <div className="space-y-4">
+                <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">02. Colores y Contacto de Soporte Técnico</span>
+
+                <div className="space-y-3">
+                  <label className="block text-slate-400">Paleta de Color de la Interfaz</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono">
+                    {[
+                      { key: 'teal', label: 'Elegante Teal', bgClass: 'bg-teal-650' },
+                      { key: 'blue', label: 'Azul Eléctrico', bgClass: 'bg-blue-600' },
+                      { key: 'emerald', label: 'Verde Esmeralda', bgClass: 'bg-emerald-600' },
+                      { key: 'indigo', label: 'Índigo Smart', bgClass: 'bg-indigo-650' },
+                      { key: 'rose', label: 'Rojo Alerta', bgClass: 'bg-red-600' },
+                      { key: 'slate', label: 'Gris Slate', bgClass: 'bg-slate-700' },
+                    ].map((color) => (
+                      <button
+                        key={color.key}
+                        type="button"
+                        onClick={() => setBrandPrimaryColor(color.key)}
+                        className={`cursor-pointer p-2 rounded border text-[10px] text-left flex items-center justify-between transition-all ${
+                          brandPrimaryColor === color.key
+                            ? 'bg-emerald-50 border-emerald-500 font-bold shadow-2xs'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="truncate pr-1 uppercase">{color.label}</span>
+                        <span className={`w-3 h-3 rounded-full shrink-0 ${color.bgClass}`} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-slate-400 mb-1">Correo Electrónico de Soporte</label>
+                    <input
+                      type="email"
+                      placeholder="Ej. mesa@su-empresa.com"
+                      value={brandSupportEmail}
+                      onChange={(e) => setBrandSupportEmail(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">Teléfono o WhatsApp de Soporte</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. +54 9 11 1234-5678"
+                      value={brandSupportPhone}
+                      onChange={(e) => setBrandSupportPhone(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 mb-1">Nombre Comercial pie de página (Copyright)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Distribuidora del Norte S.R.L."
+                    value={brandFooterCompany}
+                    onChange={(e) => setBrandFooterCompany(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2.5 pt-1.5 select-none text-slate-700">
+                  <input
+                    type="checkbox"
+                    id="chk_hide_sensina"
+                    checked={brandHideSensina}
+                    onChange={(e) => setBrandHideSensina(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-550 cursor-pointer"
+                  />
+                  <label htmlFor="chk_hide_sensina" className="cursor-pointer font-bold">
+                    Ocultar logotipos y menciones secundarias a "SENSINA"
+                  </label>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Vista Previa de la marca */}
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-150 space-y-3">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider font-mono">VISTA PREVIA EN TIEMPO REAL COHESIVA</span>
+              <div className="bg-white p-3 border border-slate-200 rounded max-w-sm flex items-center gap-3">
+                {brandLogoType === 'icon' && (
+                  <div className="w-8 h-8 bg-teal-600 text-white font-bold rounded flex items-center justify-center text-sm shadow-xs">
+                    {brandLogoIcon || 'C'}
+                  </div>
+                )}
+                {brandLogoType === 'emoji' && (
+                  <div className="w-8 h-8 rounded flex items-center justify-center font-bold text-xl select-none">
+                    {brandLogoEmoji || '⛽'}
+                  </div>
+                )}
+                {(brandLogoType === 'url' || brandLogoType === 'base64') && (
+                  <img
+                    src={(brandLogoType === 'base64' ? brandLogoBase64 : brandLogoUrl) || 'https://via.placeholder.com/32'}
+                    alt="Logo"
+                    className="w-8 h-8 object-contain rounded"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+                <div>
+                  <span className="text-xs font-extrabold text-slate-900 block leading-tight">{brandPlatformName || 'Nombre de Plataforma'}</span>
+                  <span className="text-[9px] text-teal-600 font-bold block leading-none tracking-widest mt-0.5 uppercase">{brandTagline || 'Eslogan'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Botón de envío */}
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="submit"
+                className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-lg flex items-center gap-2 shadow-md transition-all text-sm font-sans"
+              >
+                <Save className="w-4 h-4 animate-bounce" />
+                GUARDAR Y APLICAR BRANDING CORPORATIVO
+              </button>
+            </div>
+
+          </form>
         </div>
       )}
 

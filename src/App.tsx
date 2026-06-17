@@ -72,6 +72,153 @@ export default function App() {
   });
   const [isLoading, setIsLoading] = useState(false);
 
+  // --- CONFIGURACIÓN DE MARCA BLANCA / WHITE-LABEL ---
+  const [whiteLabel, setWhiteLabel] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cesti_white_label_layout');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error("No se pudo cargar la configuración de marca blanca", e);
+        }
+      }
+    }
+    return {
+      platformName: 'C.E.S.T.I.',
+      tagline: 'TELEMETRÍA',
+      logoType: 'emoji', // 'icon' | 'emoji' | 'url' | 'base64'
+      logoIcon: 'C',
+      logoEmoji: '⛽',
+      logoUrl: '',
+      logoBase64: '',
+      primaryColor: 'teal',
+      supportEmail: 'soporte@cesti.com.ar',
+      supportPhone: '+54 9 11 1234-5678',
+      footerCompany: 'C.E.S.T.I. S.A.',
+      hideSensinaBranding: false
+    };
+  });
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = `${whiteLabel.platformName || 'C.E.S.T.I.'} - Telemetría Inteligente`;
+    }
+  }, [whiteLabel.platformName]);
+
+  const handleUpdateWhiteLabel = (newBranding: any) => {
+    setWhiteLabel(newBranding);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cesti_white_label_layout', JSON.stringify(newBranding));
+    }
+  };
+
+  // Generar anulaciones de estilos de marca en tiempo de ejecución (inyecta CSS para clases de color)
+  const getBrandOverrides = () => {
+    let primary = '#0d9488'; // teal-600
+    let primaryDark = '#0f766e'; // teal-700
+    let primaryDarkest = '#115e59'; // teal-800
+    let primaryLight = '#f0fdfa'; // teal-50
+    let primaryLightBorder = '#ccfbf1'; // teal-100
+    let textOnPrimaryLight = '#0f766e'; // teal-700
+
+    switch (whiteLabel.primaryColor) {
+      case 'blue':
+        primary = '#2563eb';
+        primaryDark = '#1d4ed8';
+        primaryDarkest = '#1e40af';
+        primaryLight = '#eff6ff';
+        primaryLightBorder = '#dbeafe';
+        textOnPrimaryLight = '#1d4ed8';
+        break;
+      case 'emerald':
+        primary = '#10b981';
+        primaryDark = '#059669';
+        primaryDarkest = '#047857';
+        primaryLight = '#ecfdf5';
+        primaryLightBorder = '#d1fae5';
+        textOnPrimaryLight = '#059669';
+        break;
+      case 'indigo':
+        primary = '#4f46e5';
+        primaryDark = '#4338ca';
+        primaryDarkest = '#3730a3';
+        primaryLight = '#f5f3ff';
+        primaryLightBorder = '#e0e7ff';
+        textOnPrimaryLight = '#4338ca';
+        break;
+      case 'rose':
+        primary = '#dc2626';
+        primaryDark = '#b91c1c';
+        primaryDarkest = '#991b1b';
+        primaryLight = '#fef2f2';
+        primaryLightBorder = '#fee2e2';
+        textOnPrimaryLight = '#b91c1c';
+        break;
+      case 'slate':
+        primary = '#334155';
+        primaryDark = '#1e293b';
+        primaryDarkest = '#0f172a';
+        primaryLight = '#f8fafc';
+        primaryLightBorder = '#f1f5f9';
+        textOnPrimaryLight = '#1e293b';
+        break;
+      case 'teal':
+      default:
+        primary = '#0d9488';
+        primaryDark = '#0f766e';
+        primaryDarkest = '#115e59';
+        primaryLight = '#f0fdfa';
+        primaryLightBorder = '#ccfbf1';
+        textOnPrimaryLight = '#0f7654';
+        break;
+    }
+
+    return `
+      /* Marca Blanca: Inyección Dinámica de Colores */
+      :root {
+        --brand-primary: ${primary};
+        --brand-primary-dark: ${primaryDark};
+        --brand-primary-darkest: ${primaryDarkest};
+        --brand-primary-light: ${primaryLight};
+        --brand-primary-light-border: ${primaryLightBorder};
+      }
+      
+      .bg-teal-500, .bg-teal-600, .bento-highlight { background-color: ${primary} !important; }
+      .bg-teal-700 { background-color: ${primaryDark} !important; }
+      .bg-teal-850, .bg-teal-800, .bg-teal-900 { background-color: ${primaryDarkest} !important; }
+      
+      .hover\\:bg-teal-700:hover { background-color: ${primaryDark} !important; }
+      .hover\\:bg-teal-850:hover, .hover\\:bg-teal-800:hover { background-color: ${primaryDarkest} !important; }
+      .hover\\:bg-teal-550:hover, .hover\\:bg-teal-600:hover { background-color: ${primary} !important; }
+      
+      .text-teal-600 { color: ${primary} !important; }
+      .text-teal-700, .text-teal-650 { color: ${primaryDark} !important; }
+      .text-teal-800 { color: ${primaryDarkest} !important; }
+      
+      .border-teal-600 { border-color: ${primary} !important; }
+      .border-teal-200 { border-color: ${primaryLightBorder} !important; }
+      .border-teal-500 { border-color: ${primary} !important; }
+      
+      .bg-teal-50 { background-color: ${primaryLight} !important; }
+      .text-teal-50 { color: ${primaryLight} !important; }
+      .bg-teal-100 { background-color: ${primaryLightBorder} !important; }
+      
+      .bg-teal-50.text-teal-700 {
+        background-color: ${primaryLight} !important;
+        color: ${textOnPrimaryLight} !important;
+      }
+      
+      .bento-highlight {
+        background-color: ${primary} !important;
+        border-color: ${primaryDark} !important;
+      }
+      .bento-highlight:hover {
+        background-color: ${primaryDark} !important;
+      }
+    `;
+  };
+
   // Sync with full-stack server
   const loadDatabase = async () => {
     setIsLoading(true);
@@ -542,18 +689,49 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-[#F1F5F9] text-slate-800 font-sans" id="sensina-app-root">
+      <style dangerouslySetInnerHTML={{ __html: getBrandOverrides() }} />
       
       {/* 1. Sidebar desktop navigation (hidden on mobile) */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200 shrink-0">
         
         {/* Brand Header */}
         <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-          <div className="w-8 h-8 bg-teal-600 rounded flex items-center justify-center text-white font-bold text-sm tracking-tighter" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.15)' }}>
-            C
-          </div>
+          {whiteLabel.logoType === 'icon' && (
+            <div className="w-8 h-8 bg-teal-600 rounded flex items-center justify-center text-white font-bold text-sm tracking-tighter" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.15)' }}>
+              {whiteLabel.logoIcon || 'C'}
+            </div>
+          )}
+          {whiteLabel.logoType === 'emoji' && (
+            <div className="w-8 h-8 rounded flex items-center justify-center font-bold text-xl select-none">
+              {whiteLabel.logoEmoji || '⛽'}
+            </div>
+          )}
+          {whiteLabel.logoType === 'url' && (
+            <img 
+              src={whiteLabel.logoUrl || 'https://via.placeholder.com/32'} 
+              alt="Logo" 
+              className="w-8 h-8 object-contain rounded" 
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
+          )}
+          {whiteLabel.logoType === 'base64' && (
+            <img 
+              src={whiteLabel.logoBase64 || 'https://via.placeholder.com/32'} 
+              alt="Logo" 
+              className="w-8 h-8 object-contain rounded" 
+              referrerPolicy="no-referrer"
+            />
+          )}
           <div>
-            <span className="text-md font-extrabold tracking-tight text-slate-900 block leading-none">C.E.S.T.I.</span>
-            <span className="text-[10px] text-teal-600 font-bold uppercase tracking-widest mt-0.5 block leading-none">TELEMETRIA</span>
+            <span className="text-md font-extrabold tracking-tight text-slate-900 block leading-none truncate max-w-[140px]">
+              {whiteLabel.platformName || 'C.E.S.T.I.'}
+            </span>
+            <span className="text-[9px] text-teal-600 font-bold uppercase tracking-wider mt-1 block leading-none truncate max-w-[140px]">
+              {whiteLabel.tagline || 'TELEMETRIA'}
+            </span>
           </div>
         </div>
 
@@ -669,7 +847,13 @@ export default function App() {
           {activeTab === 'alerts' && <Alerts data={data} onRefresh={loadDatabase} onAcknowledgeAlert={handleAcknowledgeAlert} onResolveAlert={handleResolveAlert} />}
           {activeTab === 'insights' && <Insights data={data} />}
           {activeTab === 'settings' && isUserAdmin && (
-            <Settings data={data} onRefresh={loadDatabase} onSimulateTelemetry={handleSimulateTelemetry} />
+            <Settings 
+              data={data} 
+              onRefresh={loadDatabase} 
+              onSimulateTelemetry={handleSimulateTelemetry} 
+              whiteLabel={whiteLabel}
+              onUpdateWhiteLabel={handleUpdateWhiteLabel}
+            />
           )}
           {activeTab === 'settings' && !isUserAdmin && (
             <div className="p-8 bg-red-50 border border-red-200 text-red-700 rounded-2xl max-w-2xl mx-auto shadow-sm text-center my-12">
@@ -704,9 +888,18 @@ export default function App() {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="p-6 border-b border-slate-100 font-sans">
-              <span className="text-sm font-extrabold text-slate-800 tracking-wide uppercase">C.E.S.T.I.</span>
-              <span className="text-[10px] text-teal-600 block mt-1 font-bold uppercase tracking-wider">TELEMETRÍA GENERAL</span>
+            <div className="p-6 border-b border-slate-100 font-sans flex items-center gap-3">
+              {whiteLabel.logoType === 'emoji' ? (
+                <div className="text-xl">{whiteLabel.logoEmoji || '⛽'}</div>
+              ) : whiteLabel.logoType === 'url' || whiteLabel.logoType === 'base64' ? (
+                <img src={whiteLabel.logoUrl || whiteLabel.logoBase64 || 'https://via.placeholder.com/32'} alt="Logo" className="w-6 h-6 object-contain rounded" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-6 h-6 bg-teal-600 rounded flex items-center justify-center text-white font-bold text-xs">{whiteLabel.logoIcon || 'C'}</div>
+              )}
+              <div>
+                <span className="text-sm font-extrabold text-slate-800 tracking-wide uppercase">{whiteLabel.platformName || 'C.E.S.T.I.'}</span>
+                <span className="text-[10px] text-teal-600 block mt-0.5 font-bold uppercase tracking-wider">{whiteLabel.tagline || 'TELEMETRÍA GENERAL'}</span>
+              </div>
             </div>
 
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
