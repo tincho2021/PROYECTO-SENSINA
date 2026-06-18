@@ -576,17 +576,28 @@ async function startServer() {
     }
   }
 
+  // Periodic background sync helper to maintain cached state updated on server context
+  setInterval(() => {
+    syncWithSharedKvdb().catch((err: any) => {
+      console.error("[C.E.S.T.I. BG INTERVAL] Failed background periodic sync:", err?.message || err);
+    });
+  }, 30000);
+
   // --- REST ENDPOINTS ---
 
   // Get full current live state (Frontend query)
-  app.get('/api/all-data', async (req, res) => {
-    await syncWithSharedKvdb();
+  app.get('/api/all-data', (req, res) => {
+    syncWithSharedKvdb().catch(err => {
+      console.error("[C.E.S.T.I. BG SYNC] Error syncing all-data:", err?.message || err);
+    });
     res.json(db);
   });
 
   // Get latest telemetry endpoint compatible with Netlify
-  app.get('/api/latest-telemetry', async (req, res) => {
-    await syncWithSharedKvdb();
+  app.get('/api/latest-telemetry', (req, res) => {
+    syncWithSharedKvdb().catch(err => {
+      console.error("[C.E.S.T.I. BG SYNC] Error syncing telemetry:", err?.message || err);
+    });
     res.json({
       ok: true,
       data: latestTelemetryData,
@@ -610,40 +621,50 @@ async function startServer() {
     });
   });
 
-  app.get('/api/latest-fuel-transactions', async (req, res) => {
-    await syncWithSharedKvdb();
+  app.get('/api/latest-fuel-transactions', (req, res) => {
+    syncWithSharedKvdb().catch(err => {
+      console.error("[C.E.S.T.I. BG SYNC] Error syncing fuel-transactions:", err?.message || err);
+    });
     res.json({
       ok: true,
       data: latestFuelTransactionsData
     });
   });
 
-  app.get('/api/latest-dispenser-status', async (req, res) => {
-    await syncWithSharedKvdb();
+  app.get('/api/latest-dispenser-status', (req, res) => {
+    syncWithSharedKvdb().catch(err => {
+      console.error("[C.E.S.T.I. BG SYNC] Error syncing dispenser-status:", err?.message || err);
+    });
     res.json({
       ok: true,
       data: latestDispenserStatusData
     });
   });
 
-  app.get('/api/latest-alarms', async (req, res) => {
-    await syncWithSharedKvdb();
+  app.get('/api/latest-alarms', (req, res) => {
+    syncWithSharedKvdb().catch(err => {
+      console.error("[C.E.S.T.I. BG SYNC] Error syncing alarms:", err?.message || err);
+    });
     res.json({
       ok: true,
       data: latestAlarmsData
     });
   });
 
-  app.get('/api/latest-deliveries', async (req, res) => {
-    await syncWithSharedKvdb();
+  app.get('/api/latest-deliveries', (req, res) => {
+    syncWithSharedKvdb().catch(err => {
+      console.error("[C.E.S.T.I. BG SYNC] Error syncing deliveries:", err?.message || err);
+    });
     res.json({
       ok: true,
       data: db.deliveries
     });
   });
 
-  app.get('/api/esp32-logs', async (req, res) => {
-    await syncWithSharedKvdb();
+  app.get('/api/esp32-logs', (req, res) => {
+    syncWithSharedKvdb().catch(err => {
+      console.error("[C.E.S.T.I. BG SYNC] Error syncing esp32-logs:", err?.message || err);
+    });
     res.json({
       ok: true,
       data: db.esp32RawLogs || []
