@@ -154,25 +154,30 @@ exports.handler = async (event, context) => {
   let existingTx = null;
   const matchTxId = payload.transaction_id;
   if (matchTxId) {
-    existingTx = currentList.find(tx => tx.transaction_id === matchTxId);
+    existingTx = currentList.find(tx => (tx.transaction_id === matchTxId || tx.id === matchTxId));
   }
 
   if (!existingTx) {
     const matchLiters = Number(payload.liters);
     existingTx = currentList.find(tx => {
-      const isSameDispenser = tx.dispenser_id === payload.dispenser_id;
-      const isSameProduct = tx.product_id === payload.product_id ||
-                            (payload.product_id === 'GO3' && tx.product_id === 'GP') ||
-                            (payload.product_id === 'GP' && tx.product_id === 'GO3');
-      const isSameLiters = Math.abs(Number(tx.liters) - matchLiters) < 0.01;
-      const isSamePlate = tx.vehicle_plate === payload.vehicle_plate ||
-                          (!tx.vehicle_plate && !payload.vehicle_plate) ||
-                          (tx.vehicle_plate === "SIN-PAT" && payload.vehicle_plate === "SIN-PAT") ||
-                          (tx.vehicle_plate === "AB123CD" && payload.vehicle_plate === "AB123CD");
+      const txDispId = tx.dispenser_id || tx.dispenserId;
+      const txProdId = tx.product_id || tx.productId;
+      const txPlate = tx.vehicle_plate || tx.vehiclePlate;
+      const txTimeStr = tx.timestamp_end || tx.received_at || tx.timestampEnd || tx.createdAt || received_at;
+
+      const isSameDispenser = txDispId === payload.dispenser_id;
+      const isSameProduct = txProdId === payload.product_id ||
+                            (payload.product_id === 'GO3' && txProdId === 'GP') ||
+                            (payload.product_id === 'GP' && txProdId === 'GO3');
+      const isSameLiters = Math.abs(Number(tx.liters) - matchLiters) < 0.04;
+      const isSamePlate = txPlate === payload.vehicle_plate ||
+                          (!txPlate && !payload.vehicle_plate) ||
+                          (txPlate === "SIN-PAT" && payload.vehicle_plate === "SIN-PAT") ||
+                          (txPlate === "AB123CD" && payload.vehicle_plate === "AB123CD");
 
       if (isSameDispenser && isSameProduct && isSameLiters && isSamePlate) {
         // Ventana de 120 segundos
-        const txTime = new Date(tx.received_at || tx.timestamp_end || Date.now()).getTime();
+        const txTime = new Date(txTimeStr).getTime();
         const timeDiffSeconds = Math.abs(Date.now() - txTime) / 1000;
         return timeDiffSeconds < 120;
       }

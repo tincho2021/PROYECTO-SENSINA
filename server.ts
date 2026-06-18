@@ -407,7 +407,6 @@ async function startServer() {
         if (res.ok) {
           const txData = await res.json();
           if (Array.isArray(txData)) {
-            latestFuelTransactionsData = txData;
             txData.forEach((kvTx: any) => {
               const txId = kvTx.transaction_id || kvTx.id;
               if (!txId) return;
@@ -416,26 +415,54 @@ async function startServer() {
               if (!exists) {
                 const newTx = {
                   id: txId,
-                  siteId: kvTx.site_id || "rosario-01",
-                  dispenserId: kvTx.dispenser_id,
-                  hose: Number(kvTx.nozzle || kvTx.hose_id || 1),
-                  productId: kvTx.product_id || "GO2",
+                  siteId: kvTx.site_id || kvTx.siteId || "rosario-01",
+                  dispenserId: kvTx.dispenser_id || kvTx.dispenserId,
+                  hose: Number(kvTx.nozzle || kvTx.hose_id || kvTx.hose || 1),
+                  productId: kvTx.product_id || kvTx.productId || "GO2",
                   liters: Number(kvTx.liters),
                   amount: Number(kvTx.amount),
-                  pricePerLiter: Number(kvTx.price_per_liter || 1200),
-                  driverId: kvTx.driver_id || "DRV-001",
-                  vehicleId: kvTx.vehicle_id || "VEH-001",
-                  vehiclePlate: kvTx.vehicle_plate || kvTx.plate || "SIN-PAT",
+                  pricePerLiter: Number(kvTx.price_per_liter || kvTx.pricePerLiter || 1200),
+                  driverId: kvTx.driver_id || kvTx.driverId || "DRV-001",
+                  vehicleId: kvTx.vehicle_id || kvTx.vehicleId || "VEH-001",
+                  vehiclePlate: kvTx.vehicle_plate || kvTx.vehiclePlate || kvTx.plate || "SIN-PAT",
                   odometer: kvTx.odometer || 0,
-                  timestampStart: kvTx.timestamp_start || new Date().toISOString(),
-                  timestampEnd: kvTx.timestamp_end || new Date().toISOString(),
-                  authorizationMethod: kvTx.authorization_method || 'RFID',
+                  timestampStart: kvTx.timestamp_start || kvTx.timestampStart || new Date().toISOString(),
+                  timestampEnd: kvTx.timestamp_end || kvTx.timestampEnd || new Date().toISOString(),
+                  authorizationMethod: kvTx.authorization_method || kvTx.authorizationMethod || 'RFID',
                   status: 'completed' as const,
-                  createdAt: kvTx.received_at || new Date().toISOString()
+                  createdAt: kvTx.received_at || kvTx.createdAt || new Date().toISOString()
                 };
                 db.transactions.unshift(newTx);
               }
             });
+
+            // Map standard format to latestFuelTransactionsData with snake_case keys for the client
+            latestFuelTransactionsData = db.transactions.map(tx => ({
+              transaction_id: tx.id,
+              device_id: "CTRL-SURT-0001",
+              site_id: tx.siteId || "rosario-01",
+              timestamp_start: tx.timestampStart || tx.createdAt,
+              timestamp_end: tx.timestampEnd || tx.createdAt,
+              dispenser_id: tx.dispenserId,
+              hose_id: `M0${tx.hose || 1}`,
+              nozzle: tx.hose || 1,
+              product_id: tx.productId,
+              product: (() => {
+                const associatedProd = db.products.find(p => p.id === tx.productId);
+                return associatedProd ? associatedProd.name.split(' (')[0] : (tx.productId === 'GO2' ? 'Gasoil Grado 2' : tx.productId === 'GP' ? 'Gasoil Grado 3' : 'Nafta Súper');
+              })(),
+              liters: tx.liters,
+              amount: tx.amount,
+              price_per_liter: tx.pricePerLiter,
+              driver_id: tx.driverId,
+              driver_name: db.drivers.find(d => d.id === tx.driverId)?.name || "C.E.S.T.I. Chofer",
+              vehicle_id: tx.vehicleId,
+              vehicle_plate: tx.vehiclePlate,
+              odometer: tx.odometer,
+              authorization_method: tx.authorizationMethod || "RFID",
+              status: tx.status || "completed",
+              received_at: tx.createdAt
+            }));
           }
         }
       } catch (e: any) {
@@ -1500,9 +1527,21 @@ async function startServer() {
         const txId = d.last_transaction_id;
         const hasTx = db.transactions.some(tx => tx.id === txId);
 
-        if (!hasTx) {
+        // Robust duplicate check based on dispenser, liters, and timestamp
+        const hasDupe = db.transactions.some(tx => {
+          const txDispId = tx.dispenserId || (tx as any).dispenser_id;
+          const txLiters = tx.liters;
+          const txTimeStr = tx.timestampEnd || tx.timestampStart || tx.createdAt || new Date().toISOString();
+          const txTime = new Date(txTimeStr).getTime();
+          
+          return txDispId === d.dispenser_id && 
+                 Math.abs(Number(txLiters) - Number(d.last_sale_liters)) < 0.05 && 
+                 Math.abs(txTime - Date.now()) < 120000;
+        });
+
+        if (!hasTx && !hasDupe) {
           const resolvedDrv = lookupDriver(d.driver);
-          const resolvedVeh = lookupVehicle(d.vehicle || d.plate);
+          const resolvedVeh = lookupVehicle(d.plate || d.vehicle);
 
           const newTx = {
             id: txId,

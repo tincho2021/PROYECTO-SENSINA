@@ -191,11 +191,16 @@ exports.handler = async (event, context) => {
       const txId = d.last_transaction_id || `TX-AUTO-${d.dispenser_id}-${Math.round(d.last_sale_liters * 100)}-${new Date(received_at).toISOString().split('T')[0]}`;
       
       const hasTx = transactionsList.some(tx => tx.transaction_id === txId || tx.id === txId);
-      const hasDupe = transactionsList.some(tx => 
-        tx.dispenser_id === d.dispenser_id && 
-        Math.abs(Number(tx.liters) - Number(d.last_sale_liters)) < 0.05 && 
-        Math.abs(new Date(tx.timestamp_end || tx.received_at || received_at).getTime() - new Date(received_at).getTime()) < 120000
-      );
+      const hasDupe = transactionsList.some(tx => {
+        const txDispId = tx.dispenserId || tx.dispenser_id;
+        const txLiters = tx.liters;
+        const txTimeStr = tx.timestampEnd || tx.timestampStart || tx.createdAt || tx.timestamp_end || tx.received_at || received_at;
+        const txTime = new Date(txTimeStr).getTime();
+        
+        return txDispId === d.dispenser_id && 
+               Math.abs(Number(txLiters) - Number(d.last_sale_liters)) < 0.04 && 
+               Math.abs(txTime - new Date(received_at).getTime()) < 120000;
+      });
 
       if (!hasTx && !hasDupe) {
         const lookupDriver = (driverVal) => {
@@ -319,7 +324,7 @@ exports.handler = async (event, context) => {
         };
 
         const resolvedDrv = lookupDriver(d.driver);
-        const resolvedVeh = lookupVehicle(d.vehicle || d.plate);
+        const resolvedVeh = lookupVehicle(d.plate || d.vehicle);
 
         const autoTx = {
           transaction_id: txId,
