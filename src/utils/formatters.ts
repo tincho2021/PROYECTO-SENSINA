@@ -57,3 +57,30 @@ export function truncate(text: string, limit = 30): string {
   if (text.length <= limit) return text;
   return text.substring(0, limit) + '...';
 }
+
+/**
+ * Resolves a driver's name from list of drivers checking by id, name, rfid or document
+ */
+export function resolveDriverName(driverId: string | undefined, drivers: any[]): string {
+  if (!driverId) return 'Operador Especial';
+  const found = drivers.find((drv: any) => {
+    const dId = String(drv.id).toLowerCase();
+    const dName = String(drv.name).toLowerCase();
+    const dRfid = drv.rfidCard ? String(drv.rfidCard).toLowerCase() : "";
+    const dDoc = drv.document ? String(drv.document).toLowerCase() : "";
+    
+    const tDrvId = String(driverId).toLowerCase();
+    
+    const cleanRfid = dRfid.replace(/[^a-z0-9]/g, '');
+    const cleanDoc = dDoc.replace(/[^a-z0-9]/g, '');
+    const cleanTxId = tDrvId.replace(/[^a-z0-9]/g, '');
+
+    return dId === tDrvId || 
+           dName === tDrvId || 
+           dRfid === tDrvId || 
+           dDoc === tDrvId ||
+           cleanRfid === cleanTxId ||
+           cleanDoc === cleanTxId;
+  });
+  return found ? found.name : driverId;
+}

@@ -17,7 +17,7 @@ import {
   Download
 } from 'lucide-react';
 
-import { formatDate, formatLiters, formatCurrency } from '../utils/formatters';
+import { formatDate, formatLiters, formatCurrency, resolveDriverName } from '../utils/formatters';
 
 interface TransactionsProps {
   data: any;
@@ -265,7 +265,7 @@ export default function Transactions({ data, onModifyTransaction, isAdmin = true
                     <td className="py-3 px-4 font-mono font-bold text-slate-800">{formatLiters(tx.liters)}</td>
                     <td className="py-3 px-4 font-mono text-slate-700">{formatCurrency(tx.amount)}</td>
                     <td className="py-3 px-4 truncate max-w-[120px]">
-                      {drivers.find((drv: any) => drv.id === tx.driverId || drv.name === tx.driverId)?.name || tx.driverId || 'Operador Especial'}
+                      {resolveDriverName(tx.driverId, drivers)}
                     </td>
                     <td className="py-3 px-4 uppercase font-mono">{tx.vehiclePlate || 'Generador C1'}</td>
                     <td className="py-3 px-4 text-center">
@@ -335,7 +335,7 @@ export default function Transactions({ data, onModifyTransaction, isAdmin = true
                 <div>
                   <span className="text-slate-400 block mb-0.5">Chofer Responsable</span>
                   <strong className="text-slate-800">
-                    {drivers.find((drv: any) => drv.id === detailTx.driverId || drv.name === detailTx.driverId)?.name || detailTx.driverId || 'Operador Central'}
+                    {resolveDriverName(detailTx.driverId, drivers)}
                   </strong>
                 </div>
                 <div>

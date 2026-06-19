@@ -1415,7 +1415,17 @@ async function startServer() {
     const dbMatch = db.drivers.find(d => {
       const matchName = d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const matchId = d.id.toLowerCase();
-      return matchId === val || matchName === val || matchName.includes(val) || val.includes(matchName);
+      const matchRfid = d.rfidCard ? d.rfidCard.toLowerCase().replace(/[^a-z0-9]/g, '') : "";
+      const matchDoc = d.document ? d.document.toLowerCase().replace(/[^a-z0-9]/g, '') : "";
+      const cleanVal = val.replace(/[^a-z0-9]/g, '');
+      return matchId === val || 
+             matchName === val || 
+             matchName.includes(val) || 
+             val.includes(matchName) || 
+             matchRfid === cleanVal || 
+             matchDoc === cleanVal ||
+             (d.rfidCard && d.rfidCard.toLowerCase() === val) ||
+             (d.document && d.document.toLowerCase() === val);
     });
     if (dbMatch) {
       return { id: dbMatch.id, name: dbMatch.name };
@@ -1436,7 +1446,14 @@ async function startServer() {
     const found = driversDb.find(d => {
       const mName = d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const mId = d.id.toLowerCase();
-      return mId === val || mName === val || mName.includes(val) || val.includes(mName);
+      const mRfid = d.rfid_card ? d.rfid_card.toLowerCase().replace(/[^a-z0-9]/g, '') : "";
+      const cleanVal = val.replace(/[^a-z0-9]/g, '');
+      return mId === val || 
+             mName === val || 
+             mName.includes(val) || 
+             val.includes(mName) || 
+             mRfid === cleanVal || 
+             (d.rfid_card && d.rfid_card.toLowerCase() === val);
     });
 
     if (found) {

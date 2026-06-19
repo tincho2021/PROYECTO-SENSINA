@@ -15,7 +15,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 
-import { formatLiters, formatDate, formatCurrency } from '../utils/formatters';
+import { formatLiters, formatDate, formatCurrency, resolveDriverName } from '../utils/formatters';
 
 interface ReportsProps {
   data: any;
@@ -248,7 +248,7 @@ export default function Reports({ data }: ReportsProps) {
                         <td className="py-2.5 px-3 font-sans">{products.find((p: any) => p.id === tx.productId)?.name?.split(' (')[0] || tx.productId}</td>
                         <td className="py-2.5 px-3 uppercase font-bold text-slate-700">{tx.vehiclePlate || 'Auxiliar'}</td>
                         <td className="py-2.5 px-3">
-                          {drivers.find((drv: any) => drv.id === tx.driverId || drv.name === tx.driverId)?.name || tx.driverId || 'Central RFID'}
+                          {resolveDriverName(tx.driverId, drivers)}
                         </td>
                         <td className="py-2.5 px-3 font-bold text-slate-800">{formatLiters(tx.liters)}</td>
                         <td className="py-2.5 px-3 text-right font-bold">{formatCurrency(tx.amount)}</td>

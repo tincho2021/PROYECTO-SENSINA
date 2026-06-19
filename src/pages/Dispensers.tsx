@@ -15,7 +15,7 @@ import {
   Activity
 } from 'lucide-react';
 
-import { formatLiters, formatCurrency, formatDate } from '../utils/formatters';
+import { formatLiters, formatCurrency, formatDate, resolveDriverName } from '../utils/formatters';
 
 interface DispensersProps {
   data: any;
@@ -243,7 +243,7 @@ export default function Dispensers({ data, onRefresh }: DispensersProps) {
                   <td className="py-3 px-3 font-bold text-slate-700">{tx.dispenserId}</td>
                   <td className="py-3 px-3">HOSE {tx.hose}</td>
                   <td className="py-3 px-3 text-slate-700">
-                    {drivers.find((drv: any) => drv.id === tx.driverId || drv.name === tx.driverId)?.name || tx.driverId || 'Control Remoto'}
+                    {resolveDriverName(tx.driverId, drivers)}
                   </td>
                   <td className="py-3 px-3 uppercase">{tx.vehiclePlate || 'N/A'}</td>
                   <td className="py-3 px-3 text-slate-800 font-bold">{formatLiters(tx.liters)}</td>
