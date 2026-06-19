@@ -1192,12 +1192,8 @@ async function startServer() {
           timestamp: new Date().toISOString()
         });
       } else {
-        // Update product info if sent & changed
-        if (product_name) existingProd.name = product_name;
-        if (product_type) existingProd.type = product_type;
-        if (product_price) existingProd.pricePerLiter = Number(product_price);
-        if (product_density) existingProd.referenceDensity = Number(product_density);
-        if (product_color) existingProd.hexColor = product_color;
+        // DO NOT overwrite active product catalog properties (names, colors, prices) with raw physical sensor telemetry code
+        // This ensures that custom names, prices, and hex colors configured by administrators in Settings.tsx are fully preserved and respected.
       }
     }
 
@@ -2449,6 +2445,11 @@ async function startServer() {
       db.products.push(newProd);
     }
 
+    // Save to the shared cloud KVDB database immediately to apply the changes
+    saveToSharedKvdb('registered-products', db.products).catch((err) => {
+      console.warn("[C.E.S.T.I. WRITE KVDB ERROR] Error saving registered-products:", err?.message || err);
+    });
+
     // Add Audit Log
     db.auditLogs.unshift({
       id: `AUD-${Date.now()}`,
@@ -2468,6 +2469,11 @@ async function startServer() {
     const prodIndex = db.products.findIndex(p => p.id === id);
     if (prodIndex > -1) {
       const removedProd = db.products.splice(prodIndex, 1)[0];
+      
+      // Save directly to global cloud database
+      saveToSharedKvdb('registered-products', db.products).catch((err) => {
+        console.warn("[C.E.S.T.I. WRITE KVDB ERROR] Error saving registered-products:", err?.message || err);
+      });
       
       // Add Audit Log
       db.auditLogs.unshift({

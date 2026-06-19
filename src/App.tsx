@@ -260,7 +260,7 @@ export default function App() {
         const req = await fetch(fallbackUrl);
         if (req.ok) {
           const res = await req.json();
-          if (res && res.ok) return res;
+          if (res && res.ok) return { ...res, isFallback: true };
         }
       } catch (e) {
         console.error(`Fallback endpoint ${fallbackUrl} failed as well:`, e);
@@ -422,7 +422,7 @@ export default function App() {
             });
           }
 
-          const updatedProducts = (telRes && telRes.products && Array.isArray(telRes.products)) 
+          const updatedProducts = (telRes && telRes.products && Array.isArray(telRes.products) && !telRes.isFallback) 
             ? telRes.products 
             : prev.products;
 
