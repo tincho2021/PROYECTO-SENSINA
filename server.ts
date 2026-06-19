@@ -1073,6 +1073,8 @@ async function startServer() {
         id: d.id,
         name: d.name,
         rfid_card: d.rfidCard,
+        document: d.document || "",
+        dni: d.document || "",
         enabled_vehicles: d.enabledVehicles,
         daily_limit_liters: d.dailyLimitLiters
       }));
