@@ -41,7 +41,9 @@ exports.handler = async (event, context) => {
     "latest-telemetry": null,
     "latest-alarms": [],
     "latest-deliveries": [],
-    "esp32-raw-payloads": []
+    "esp32-raw-payloads": [],
+    "registered-drivers": [],
+    "registered-vehicles": []
   };
 
   // 1. Borrado completo de la persistencia fallback en KVDB.io

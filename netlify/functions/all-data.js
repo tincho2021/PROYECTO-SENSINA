@@ -293,6 +293,40 @@ exports.handler = async (event, context) => {
     buildDb.esp32RawLogs = rawLogs;
   }
 
+  // 8. Obtener Choferes Registrados desde la Nube (KVDB / Blobs)
+  let cloudDrivers = null;
+  if (store) {
+    try {
+      cloudDrivers = await store.getJSON("registered-drivers");
+    } catch (e) {}
+  }
+  if (!cloudDrivers) {
+    try {
+      const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/registered-drivers`);
+      if (res.ok) cloudDrivers = await res.json();
+    } catch (e) {}
+  }
+  if (Array.isArray(cloudDrivers) && cloudDrivers.length > 0) {
+    buildDb.drivers = cloudDrivers;
+  }
+
+  // 9. Obtener Vehículos Registrados desde la Nube (KVDB / Blobs)
+  let cloudVehicles = null;
+  if (store) {
+    try {
+      cloudVehicles = await store.getJSON("registered-vehicles");
+    } catch (e) {}
+  }
+  if (!cloudVehicles) {
+    try {
+      const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/registered-vehicles`);
+      if (res.ok) cloudVehicles = await res.json();
+    } catch (e) {}
+  }
+  if (Array.isArray(cloudVehicles) && cloudVehicles.length > 0) {
+    buildDb.vehicles = cloudVehicles;
+  }
+
   return {
     statusCode: 200,
     headers,
