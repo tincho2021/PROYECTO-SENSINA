@@ -1711,9 +1711,9 @@ async function startServer() {
           dbDisp.activeDriver = d.driver;
         } else if (d.driver === "Sin asignar") {
           if (!isCurrentlyDispensing && Number(d.last_sale_liters || 0) === 0) {
-            dbDisp.activeDriver = "Sin asignar";
+            dbDisp.activeDriver = undefined;
           } else {
-            dbDisp.activeDriver = previousDriver || dbDisp.activeDriver;
+            dbDisp.activeDriver = previousDriver === "Sin asignar" ? undefined : (previousDriver || dbDisp.activeDriver);
           }
         } else {
           dbDisp.activeDriver = d.driver ?? dbDisp.activeDriver;
@@ -1723,7 +1723,7 @@ async function startServer() {
         if (d.vehicle && d.vehicle !== "Sin asignar") {
           dbDisp.activeVehicle = d.vehicle;
         } else if (d.vehicle === "Sin asignar" && !isCurrentlyDispensing && Number(d.last_sale_liters || 0) === 0) {
-          dbDisp.activeVehicle = "Sin asignar";
+          dbDisp.activeVehicle = undefined;
         } else {
           dbDisp.activeVehicle = d.vehicle ?? dbDisp.activeVehicle;
         }
@@ -1731,7 +1731,7 @@ async function startServer() {
         if (d.plate && d.plate !== "SIN-PAT" && d.plate !== "Sin asignar") {
           dbDisp.activePlate = d.plate;
         } else if ((d.plate === "SIN-PAT" || d.plate === "Sin asignar") && !isCurrentlyDispensing && Number(d.last_sale_liters || 0) === 0) {
-          dbDisp.activePlate = "SIN-PAT";
+          dbDisp.activePlate = undefined;
         } else {
           dbDisp.activePlate = d.plate ?? dbDisp.activePlate;
         }

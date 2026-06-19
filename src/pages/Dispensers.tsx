@@ -188,7 +188,7 @@ export default function Dispensers({ data, onRefresh }: DispensersProps) {
                   </div>
 
                   {/* Driver / Vehicle assigned if exists */}
-                  {d.activeDriver ? (
+                  {d.activeDriver && d.activeDriver !== "Sin asignar" ? (
                     <div className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100 space-y-1.5">
                       <div className="flex items-center gap-1.5 text-xs text-emerald-800 font-bold">
                         <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
