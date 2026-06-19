@@ -1148,18 +1148,32 @@ async function startServer() {
     // Extract & resolve product_id. Always use the exact, literal product_id sent by the device
     // (e.g. 'GP', 'GO2', 'NS') to preserve mappings for dispensers, nozzles, and transactions.
     let resolvedProductId = product_id || 'GO2';
-    if (!product_id || product_id === 'GO2') {
-      if (tank_id === 'tank_01' || (tank_name && tank_name.toLowerCase().includes('premium')) || (product_name && product_name.toLowerCase().includes('grado 3'))) {
-        resolvedProductId = 'GP';
-      } else if (tank_id === 'tank_03' || (tank_name && tank_name.toLowerCase().includes('super')) || (product_name && product_name.toLowerCase().includes('super'))) {
-        resolvedProductId = 'NS';
-      }
-    } else if (resolvedProductId === 'GO3' || resolvedProductId === 'premium') {
-      resolvedProductId = 'GP';
-    } else if (resolvedProductId === 'nafta') {
+
+    // Build a helper string to inspect all possible contextual hints (names, types, IDs)
+    const contextStr = (
+      (product_id || '') + ' ' + 
+      (product_name || '') + ' ' + 
+      (product_type || '') + ' ' + 
+      (tank_name || '') + ' ' + 
+      (tank_id || '')
+    ).toLowerCase();
+
+    // Map according to specific user product configurations
+    if (contextStr.includes('nafta') || contextStr.includes('super') || contextStr.includes('súper') || contextStr.includes('ns') || tank_id === 'tank_03') {
       resolvedProductId = 'NS';
-    } else if (resolvedProductId === 'gasoil') {
+    } else if (contextStr.includes('premium') || contextStr.includes('infinia') || contextStr.includes('grado 3') || contextStr.includes('grado3') || contextStr.includes('gp') || tank_id === 'tank_01' || tank_id === 'tank_1') {
+      resolvedProductId = 'GP';
+    } else if (contextStr.includes('gasoil') || contextStr.includes('diesel') || contextStr.includes('ultra') || contextStr.includes('comun') || contextStr.includes('común') || contextStr.includes('go2') || tank_id === 'tank_02' || tank_id === 'tank_2') {
       resolvedProductId = 'GO2';
+    } else {
+      // General fallbacks
+      if (resolvedProductId === 'GO3' || resolvedProductId === 'premium') {
+        resolvedProductId = 'GP';
+      } else if (resolvedProductId === 'nafta' || resolvedProductId === 'NF') {
+        resolvedProductId = 'NS';
+      } else if (resolvedProductId === 'gasoil') {
+        resolvedProductId = 'GO2';
+      }
     }
 
     // Dynamic auto-registration of product in catalogue

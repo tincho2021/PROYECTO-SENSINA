@@ -197,21 +197,29 @@ export async function fetchAllData() {
               const mappedAlias = aliases[tel.tank_id];
               const tankIndex = clientDb.tanks.findIndex((t: any) => t.id === tel.tank_id || (mappedAlias && t.id === mappedAlias));
 
-              let pId = tel.product_id;
-              if (!pId || pId === "GO2") {
-                if (tel.tank_id === 'tank_01' || tel.tank_name?.toLowerCase().includes('premium') || tel.product_name?.toLowerCase().includes('premium') || tel.product_name?.toLowerCase().includes('grado 3')) {
+              let pId = tel.product_id || 'GO2';
+              const contextStr = (
+                (tel.product_id || '') + ' ' + 
+                (tel.product_name || '') + ' ' + 
+                (tel.product_type || '') + ' ' + 
+                (tel.tank_name || '') + ' ' + 
+                (tel.tank_id || '')
+              ).toLowerCase();
+
+              if (contextStr.includes('nafta') || contextStr.includes('super') || contextStr.includes('súper') || contextStr.includes('ns') || tel.tank_id === 'tank_03') {
+                pId = 'NS';
+              } else if (contextStr.includes('premium') || contextStr.includes('infinia') || contextStr.includes('grado 3') || contextStr.includes('grado3') || contextStr.includes('gp') || tel.tank_id === 'tank_01' || tel.tank_id === 'tank_1') {
+                pId = 'GP';
+              } else if (contextStr.includes('gasoil') || contextStr.includes('diesel') || contextStr.includes('ultra') || contextStr.includes('comun') || contextStr.includes('común') || contextStr.includes('go2') || tel.tank_id === 'tank_02' || tel.tank_id === 'tank_2') {
+                pId = 'GO2';
+              } else {
+                if (pId === "GO3" || pId === "premium") {
                   pId = "GP";
-                } else if (tel.tank_id === 'tank_03' || tel.tank_name?.toLowerCase().includes('super') || tel.product_name?.toLowerCase().includes('super')) {
+                } else if (pId === "nafta" || pId === "NF") {
                   pId = "NS";
-                } else {
+                } else if (pId === "gasoil") {
                   pId = "GO2";
                 }
-              } else if (pId === "GO3" || pId === "premium") {
-                pId = "GP";
-              } else if (pId === "nafta") {
-                pId = "NS";
-              } else if (pId === "gasoil") {
-                pId = "GO2";
               }
 
               const targetId = tankIndex > -1 ? clientDb.tanks[tankIndex].id : tel.tank_id;
