@@ -347,6 +347,77 @@ async function startServer() {
         console.warn("[C.E.S.T.I. SYNC] Error fetching products from KVDB:", e?.message || e);
       }
 
+      // Sync registered-drivers
+      try {
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/registered-drivers`);
+        if (res.ok) {
+          const driversData = await res.json();
+          if (Array.isArray(driversData) && driversData.length > 0) {
+            driversData.forEach((kvDrv: any) => {
+              if (!kvDrv.id) return;
+              let localDrv = db.drivers.find(d => d.id === kvDrv.id);
+              if (localDrv) {
+                localDrv.name = kvDrv.name ?? localDrv.name;
+                localDrv.document = kvDrv.document ?? localDrv.document;
+                localDrv.rfidCard = kvDrv.rfidCard ?? localDrv.rfidCard;
+                localDrv.enabledVehicles = kvDrv.enabledVehicles ?? localDrv.enabledVehicles;
+                localDrv.dailyLimitLiters = Number(kvDrv.dailyLimitLiters ?? localDrv.dailyLimitLiters);
+                localDrv.monthlyLimitLiters = Number(kvDrv.monthlyLimitLiters ?? localDrv.monthlyLimitLiters);
+                localDrv.active = kvDrv.active ?? localDrv.active;
+                localDrv.costCenter = kvDrv.costCenter ?? localDrv.costCenter;
+                localDrv.createdAt = kvDrv.createdAt ?? localDrv.createdAt;
+              } else {
+                db.drivers.push(kvDrv);
+              }
+            });
+          } else if (Array.isArray(driversData) && driversData.length === 0) {
+            if (db.drivers.length > 0) {
+              await saveToSharedKvdb('registered-drivers', db.drivers);
+            }
+          }
+        } else {
+          await saveToSharedKvdb('registered-drivers', db.drivers);
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching drivers from KVDB:", e?.message || e);
+      }
+
+      // Sync registered-vehicles
+      try {
+        const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/registered-vehicles`);
+        if (res.ok) {
+          const vehiclesData = await res.json();
+          if (Array.isArray(vehiclesData) && vehiclesData.length > 0) {
+            vehiclesData.forEach((kvVeh: any) => {
+              if (!kvVeh.id) return;
+              let localVeh = db.vehicles.find(v => v.id === kvVeh.id);
+              if (localVeh) {
+                localVeh.plate = kvVeh.plate ?? localVeh.plate;
+                localVeh.brand = kvVeh.brand ?? localVeh.brand;
+                localVeh.model = kvVeh.model ?? localVeh.model;
+                localVeh.type = kvVeh.type ?? localVeh.type;
+                localVeh.costCenter = kvVeh.costCenter ?? localVeh.costCenter;
+                localVeh.tankCapacityLiters = Number(kvVeh.tankCapacityLiters ?? localVeh.tankCapacityLiters);
+                localVeh.expectedKmL = Number(kvVeh.expectedKmL ?? localVeh.expectedKmL);
+                localVeh.lastOdometer = Number(kvVeh.lastOdometer ?? localVeh.lastOdometer);
+                localVeh.active = kvVeh.active ?? localVeh.active;
+                localVeh.createdAt = kvVeh.createdAt ?? localVeh.createdAt;
+              } else {
+                db.vehicles.push(kvVeh);
+              }
+            });
+          } else if (Array.isArray(vehiclesData) && vehiclesData.length === 0) {
+            if (db.vehicles.length > 0) {
+              await saveToSharedKvdb('registered-vehicles', db.vehicles);
+            }
+          }
+        } else {
+          await saveToSharedKvdb('registered-vehicles', db.vehicles);
+        }
+      } catch (e: any) {
+        console.warn("[C.E.S.T.I. SYNC] Error fetching vehicles from KVDB:", e?.message || e);
+      }
+
       // 3. Sync dispenser-status
       try {
         const res = await fetchWithTimeout(`https://kvdb.io/${bucket}/latest-dispenser-status`);
@@ -2000,6 +2071,9 @@ async function startServer() {
     };
 
     db.vehicles.push(newVeh);
+    saveToSharedKvdb('registered-vehicles', db.vehicles).catch(err => {
+      console.error("[C.E.S.T.I. WRITE ERR] Failed to write registered-vehicles to cloud:", err?.message || err);
+    });
     res.json({ success: true, vehicle: newVeh });
   });
 
@@ -2023,6 +2097,9 @@ async function startServer() {
     };
 
     db.drivers.push(newDrv);
+    saveToSharedKvdb('registered-drivers', db.drivers).catch(err => {
+      console.error("[C.E.S.T.I. WRITE ERR] Failed to write registered-drivers to cloud:", err?.message || err);
+    });
     res.json({ success: true, driver: newDrv });
   });
 
@@ -2333,6 +2410,9 @@ async function startServer() {
     db.users = [...mockUsers];
     db.auditLogs = [...mockAuditLogs];
 
+    saveToSharedKvdb('registered-drivers', db.drivers).catch(() => {});
+    saveToSharedKvdb('registered-vehicles', db.vehicles).catch(() => {});
+
     res.json({ success: true, message: 'Base de datos simulada restaurada a valores predeterminados.' });
   });
 
@@ -2368,6 +2448,16 @@ async function startServer() {
         body: JSON.stringify([])
       });
       await fetch(`https://kvdb.io/${bucket}/registered-products`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+      await fetch(`https://kvdb.io/${bucket}/registered-drivers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([])
+      });
+      await fetch(`https://kvdb.io/${bucket}/registered-vehicles`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify([])
