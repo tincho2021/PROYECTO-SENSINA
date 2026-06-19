@@ -1416,19 +1416,27 @@ async function startServer() {
       const matchName = d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const matchId = d.id.toLowerCase();
       const matchRfid = d.rfidCard ? d.rfidCard.toLowerCase().replace(/[^a-z0-9]/g, '') : "";
-      const matchDoc = d.document ? d.document.toLowerCase().replace(/[^a-z0-9]/g, '') : "";
+      const matchDoc = d.document ? String(d.document).toLowerCase().replace(/[^a-z0-9]/g, '') : "";
       const cleanVal = val.replace(/[^a-z0-9]/g, '');
+
       return matchId === val || 
              matchName === val || 
-             matchName.includes(val) || 
-             val.includes(matchName) || 
-             matchRfid === cleanVal || 
-             matchDoc === cleanVal ||
+             (matchRfid && matchRfid === cleanVal) || 
+             (matchDoc && matchDoc === cleanVal) ||
              (d.rfidCard && d.rfidCard.toLowerCase() === val) ||
-             (d.document && d.document.toLowerCase() === val);
+             (d.document && String(d.document).toLowerCase() === val);
     });
     if (dbMatch) {
       return { id: dbMatch.id, name: dbMatch.name };
+    }
+
+    // Fuzzy components match first in database
+    const dbFuzzy = db.drivers.find(d => {
+      const matchName = d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      return matchName.includes(val) || val.includes(matchName);
+    });
+    if (dbFuzzy) {
+      return { id: dbFuzzy.id, name: dbFuzzy.name };
     }
 
     // Fallback static list matching mock data
@@ -1442,6 +1450,41 @@ async function startServer() {
       { id: 'DRV-007', name: 'Guillermo Ortelli', rfid_card: 'RFID-8833-07' },
       { id: 'DRV-008', name: 'Christian Ledesma', rfid_card: 'RFID-9944-08' }
     ];
+
+    if (val.includes("villagra") || val.includes("federico")) {
+      const found = driversDb.find(d => d.id === 'DRV-004');
+      if (found) return { id: found.id, name: found.name };
+    }
+    if (val.includes("perez") || (val.includes("juan") && !val.includes("gomez"))) {
+      const found = driversDb.find(d => d.id === 'DRV-001');
+      if (found) return { id: found.id, name: found.name };
+    }
+    if (val.includes("gomez") || val.includes("carlos")) {
+      const found = driversDb.find(d => d.id === 'DRV-002');
+      if (found) return { id: found.id, name: found.name };
+    }
+    if (val.includes("rodriguez") || val.includes("maria")) {
+      if (!val.includes("martin") && !val.includes("melgarejo")) {
+        const found = driversDb.find(d => d.id === 'DRV-003');
+        if (found) return { id: found.id, name: found.name };
+      }
+    }
+    if (val.includes("mercado") || val.includes("leandro")) {
+      const found = driversDb.find(d => d.id === 'DRV-005');
+      if (found) return { id: found.id, name: found.name };
+    }
+    if (val.includes("altuna") || val.includes("mariano")) {
+      const found = driversDb.find(d => d.id === 'DRV-006');
+      if (found) return { id: found.id, name: found.name };
+    }
+    if (val.includes("ortelli") || val.includes("guillermo")) {
+      const found = driversDb.find(d => d.id === 'DRV-007');
+      if (found) return { id: found.id, name: found.name };
+    }
+    if (val.includes("ledesma") || val.includes("christian")) {
+      const found = driversDb.find(d => d.id === 'DRV-008');
+      if (found) return { id: found.id, name: found.name };
+    }
 
     const found = driversDb.find(d => {
       const mName = d.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -1464,12 +1507,29 @@ async function startServer() {
 
   const lookupVehicle = (vehicleVal: any) => {
     if (!vehicleVal) return { id: undefined, plate: undefined };
-    let val = String(vehicleVal).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    let rawVal = String(vehicleVal).trim();
+    let val = rawVal.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    // Ignore known empty / empty-equivalent plate values
+    if (!val || val === "sin-pat" || val === "sin patente" || val === "sin_patente" || val === "unknown" || val === "sin patente o asociar") {
+      return { id: "VEH-AUTO", plate: "SIN-PAT" };
+    }
 
     // Normalize commonly misspelled terms
     val = val.replace('mercedez', 'mercedes').replace('mercede', 'mercedes');
 
-    // Direct mapping bypass for known vehicle models/brands or plates
+    // 1. Try to extract a plate pattern using regex
+    const plateRegex = /[a-z]{2,3}[-\s]?\d{3}[-\s]?[a-z]{0,3}/i;
+    const plateMatchResult = rawVal.match(plateRegex);
+    if (plateMatchResult) {
+      const extractedPlate = plateMatchResult[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const exactPlateMatch = db.vehicles.find(v => v.plate.toUpperCase().replace(/[^A-Z0-9]/g, '') === extractedPlate);
+      if (exactPlateMatch) {
+        return { id: exactPlateMatch.id, plate: exactPlateMatch.plate };
+      }
+    }
+
+    // 2. Direct mapping bypass for known vehicle models/brands or plates
     if (val.includes("mercedes") || val.includes("actros") || val.includes("510") || val.includes("zz") || val.includes("aa-510-zz") || val.includes("aa510zz")) {
       const target = db.vehicles.find(v => v.id === 'VEH-005');
       if (target) return { id: target.id, plate: target.plate };
@@ -1503,23 +1563,31 @@ async function startServer() {
       if (target) return { id: target.id, plate: target.plate };
     }
 
-    // Check against current database first if available
+    // 3. Match by ID or exact Plate in current db
     const dbMatch = db.vehicles.find(v => {
       const vId = v.id.toLowerCase();
       const vPlateNoDashes = v.plate.toLowerCase().replace(/[^a-z0-9]/g, '');
       const vBrandModel = (v.brand + " " + v.model).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const cleanVal = val.replace(/[^a-z0-9]/g, '');
-      return vId === val || vPlateNoDashes === cleanVal || vBrandModel.includes(val) || val.includes(vBrandModel);
+      return vId === val || vPlateNoDashes === cleanVal || vBrandModel === val;
     });
     if (dbMatch) {
       return { id: dbMatch.id, plate: dbMatch.plate };
+    }
+
+    // 4. Fuzzy brand/model contains match
+    const fuzzyVeh = db.vehicles.find(v => {
+      const vBrandModel = (v.brand + " " + v.model).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      return vBrandModel.includes(val) || val.includes(vBrandModel);
+    });
+    if (fuzzyVeh) {
+      return { id: fuzzyVeh.id, plate: fuzzyVeh.plate };
     }
 
     // Fallback static list matching mock data
     const vehiclesDb = [
       { id: 'VEH-001', plate: 'AB-123-CD', brand: 'Toyota', model: 'Hilux 4x4' },
       { id: 'VEH-002', plate: 'AD-892-JJ', brand: 'Ford', model: 'Ranger Raptor' },
-      { id: 'VEH-003', plate: 'GEN-01-IND', brand: 'Caterpillar', model: 'CAT-3512' },
       { id: 'VEH-003', plate: 'GEN-01-IND', brand: 'Caterpillar', model: 'CAT-3512' },
       { id: 'VEH-004', plate: 'AA-450-XX', brand: 'Scania', model: 'R450 Heavy' },
       { id: 'VEH-005', plate: 'AA-510-ZZ', brand: 'Mercedes-Benz', model: 'Actros 2651' },
@@ -1768,31 +1836,43 @@ async function startServer() {
   // 3. ESP32 Register Fuel Transaction Endpoint
   // POST /api/fuel-transactions
   app.post('/api/fuel-transactions', validateDeviceToken, (req, res) => {
-    const { transaction_id, dispenser_id, hose, product_id, liters, amount, price_per_liter, driver_id, vehicle_id, vehicle_plate, odometer, authorization_method } = req.body;
+    // Standard normalization of inputs to support physical device/different client field variants
+    const bodyTxId = req.body.transaction_id || req.body.transactionId;
+    const bodyDispId = req.body.dispenser_id || req.body.dispenserId;
+    const bodyHose = req.body.hose ?? req.body.nozzle ?? req.body.hose_id ?? 1;
+    const bodyProductId = req.body.product_id || req.body.productId || "GO2";
+    const bodyLiters = req.body.liters ?? req.body.liters_dispensed ?? 0;
+    const bodyAmount = req.body.amount || req.body.amountVal;
+    const bodyPricePerLiter = req.body.price_per_liter || req.body.pricePerLiter;
+    const bodyDriverId = req.body.driver_id || req.body.driver || req.body.driverId || req.body.rfid || req.body.operator;
+    const bodyVehicleId = req.body.vehicle_id || req.body.vehicle || req.body.vehicleId;
+    const bodyVehiclePlate = req.body.vehicle_plate || req.body.plate || req.body.patente || bodyVehicleId;
+    const bodyOdometer = req.body.odometer ?? req.body.odometro ?? 0;
+    const bodyAuthMethod = req.body.authorization_method || req.body.authorizationMethod || "RFID";
 
-    if (!dispenser_id || !liters || !product_id) {
-      return res.status(400).json({ error: 'Missing dispenser_id, product_id, or liters in transaction packet' });
+    if (!bodyDispId || !bodyLiters || !bodyProductId) {
+      return res.status(400).json({ error: 'Missing dispenser_id (or dispenserId), product_id, or liters in transaction packet' });
     }
 
     // Check for duplicate fuel transactions to prevent repeated entries on retries, packet lags or double clicks
     let existingTx = null;
 
-    if (transaction_id) {
-      existingTx = db.transactions.find(tx => tx.id === transaction_id);
+    if (bodyTxId) {
+      existingTx = db.transactions.find(tx => tx.id === bodyTxId);
     }
 
     if (!existingTx) {
-      const matchLiters = Number(liters);
+      const matchLiters = Number(bodyLiters);
       existingTx = db.transactions.find(tx => {
-        const isSameDispenser = tx.dispenserId === dispenser_id;
-        const isSameProduct = tx.productId === product_id || 
-                              (product_id === 'GO3' && tx.productId === 'GP') ||
-                              (product_id === 'GP' && tx.productId === 'GO3');
+        const isSameDispenser = tx.dispenserId === bodyDispId;
+        const isSameProduct = tx.productId === bodyProductId || 
+                              (bodyProductId === 'GO3' && tx.productId === 'GP') ||
+                              (bodyProductId === 'GP' && tx.productId === 'GO3');
         const isSameLiters = Math.abs(Number(tx.liters) - matchLiters) < 0.01;
-        const isSamePlate = tx.vehiclePlate === vehicle_plate || 
-                            (!tx.vehiclePlate && !vehicle_plate) ||
-                            (tx.vehiclePlate === "SIN-PAT" && vehicle_plate === "SIN-PAT") ||
-                            (tx.vehiclePlate === "AB123CD" && vehicle_plate === "AB123CD");
+        const isSamePlate = tx.vehiclePlate === bodyVehiclePlate || 
+                            (!tx.vehiclePlate && !bodyVehiclePlate) ||
+                            (tx.vehiclePlate === "SIN-PAT" && bodyVehiclePlate === "SIN-PAT") ||
+                            (tx.vehiclePlate === "AB123CD" && bodyVehiclePlate === "AB123CD");
         
         if (isSameDispenser && isSameProduct && isSameLiters && isSamePlate) {
           // Check time difference (less than 120 seconds / 2 minutes) using transaction timestamps
@@ -1805,7 +1885,7 @@ async function startServer() {
     }
 
     if (existingTx) {
-      console.log(`[C.E.S.T.I. DEDUPLICADOR STABLE] Evitada salida duplicada de manguera: ${existingTx.id} (Dispensero: ${dispenser_id}, Litros: ${liters}L, Patente: ${vehicle_plate || 'Sin ident.'})`);
+      console.log(`[C.E.S.T.I. DEDUPLICADOR STABLE] Evitada salida duplicada de manguera: ${existingTx.id} (Dispensero: ${bodyDispId}, Litros: ${bodyLiters}L, Patente: ${bodyVehiclePlate || 'Sin ident.'})`);
       return res.json({ 
         success: true, 
         message: 'Transaction already processed (duplicate entry avoided)', 
@@ -1815,25 +1895,25 @@ async function startServer() {
     }
 
     // 1. Log transaction
-    const resolvedDrv = lookupDriver(driver_id);
-    const resolvedVeh = lookupVehicle(vehicle_id || vehicle_plate);
+    const resolvedDrv = lookupDriver(bodyDriverId);
+    const resolvedVeh = lookupVehicle(bodyVehicleId || bodyVehiclePlate);
 
     const newTx = {
-      id: transaction_id || `TX-${Date.now()}`,
+      id: bodyTxId || `TX-${Date.now()}`,
       siteId: (req as any).device.siteId,
-      dispenserId: dispenser_id,
-      hose: hose ?? 1,
-      productId: product_id,
-      liters: Number(liters),
-      amount: Number(amount || liters * (price_per_liter || 1200)),
-      pricePerLiter: Number(price_per_liter || 1200),
-      driverId: resolvedDrv.id || driver_id,
-      vehicleId: resolvedVeh.id || vehicle_id,
-      vehiclePlate: resolvedVeh.plate || vehicle_plate,
-      odometer: odometer,
+      dispenserId: bodyDispId,
+      hose: bodyHose ?? 1,
+      productId: bodyProductId,
+      liters: Number(bodyLiters),
+      amount: Number(bodyAmount || bodyLiters * (bodyPricePerLiter || 1200)),
+      pricePerLiter: Number(bodyPricePerLiter || 1200),
+      driverId: resolvedDrv.id || bodyDriverId,
+      vehicleId: resolvedVeh.id || bodyVehicleId,
+      vehiclePlate: resolvedVeh.plate || bodyVehiclePlate,
+      odometer: bodyOdometer,
       timestampStart: new Date(Date.now() - 3 * 60000).toISOString(),
       timestampEnd: new Date().toISOString(),
-      authorizationMethod: authorization_method || 'RFID',
+      authorizationMethod: bodyAuthMethod || 'RFID',
       status: 'completed' as const,
       createdAt: new Date().toISOString()
     };
@@ -1841,7 +1921,7 @@ async function startServer() {
     db.transactions.unshift(newTx);
 
     // 2. Reduce tank volume corresponding to product
-    const tank = db.tanks.find(t => t.productId === product_id && t.siteId === newTx.siteId);
+    const tank = db.tanks.find(t => t.productId === bodyProductId && t.siteId === newTx.siteId);
     if (tank) {
       tank.currentVolumeLiters = Math.max(0, tank.currentVolumeLiters - newTx.liters);
       // Rough estimation of height
@@ -1850,7 +1930,7 @@ async function startServer() {
     }
 
     // 3. Release/update dispenser back to available
-    const dispenser = db.dispensers.find(disp => disp.id === dispenser_id && disp.hose === Number(hose || 1));
+    const dispenser = db.dispensers.find(disp => disp.id === bodyDispId && disp.hose === Number(bodyHose || 1));
     if (dispenser) {
       dispenser.status = 'available';
       dispenser.lastSaleLiters = newTx.liters;
@@ -1862,10 +1942,10 @@ async function startServer() {
     }
 
     // 4. Update vehicle odometer readings
-    if (vehicle_id && odometer) {
-      const veh = db.vehicles.find(v => v.id === vehicle_id);
+    if (bodyVehicleId && bodyOdometer) {
+      const veh = db.vehicles.find(v => v.id === bodyVehicleId);
       if (veh) {
-        veh.lastOdometer = Math.max(veh.lastOdometer, odometer);
+        veh.lastOdometer = Math.max(veh.lastOdometer, bodyOdometer);
       }
     }
 
@@ -1875,7 +1955,7 @@ async function startServer() {
       userId: 'device-esp32-controller',
       username: (req as any).device.deviceId,
       action: 'Transacción de Surtidor Registrada',
-      details: `${dispenser?.name || dispenser_id} entregó ${newTx.liters} L de ${product_id} a patente ${vehicle_plate || 'Sin ident.'}`,
+      details: `${dispenser?.name || bodyDispId} entregó ${newTx.liters} L de ${bodyProductId} a patente ${bodyVehiclePlate || 'Sin ident.'}`,
       timestamp: new Date().toISOString()
     });
 
@@ -1889,11 +1969,11 @@ async function startServer() {
       hose_id: `M0${newTx.hose}`,
       nozzle: newTx.hose,
       product: (() => {
-        const associatedProd = db.products.find(p => p.id === product_id) || 
-                               (product_id === 'GO3' ? db.products.find(p => p.id === 'GP') : null);
-        return associatedProd ? associatedProd.name.split(' (')[0] : (product_id === 'GO2' ? 'Gasoil Grado 2' : product_id === 'GP' || product_id === 'GO3' ? 'Gasoil Grado 3' : product_id === 'NS' ? 'Nafta Súper' : 'Nafta Premium');
+        const associatedProd = db.products.find(p => p.id === bodyProductId) || 
+                               (bodyProductId === 'GO3' ? db.products.find(p => p.id === 'GP') : null);
+        return associatedProd ? associatedProd.name.split(' (')[0] : (bodyProductId === 'GO2' ? 'Gasoil Grado 2' : bodyProductId === 'GP' || bodyProductId === 'GO3' ? 'Gasoil Grado 3' : bodyProductId === 'NS' ? 'Nafta Súper' : 'Nafta Premium');
       })(),
-      product_id: product_id,
+      product_id: bodyProductId,
       liters: newTx.liters,
       amount: newTx.amount,
       price_per_liter: newTx.pricePerLiter,
@@ -1901,8 +1981,8 @@ async function startServer() {
       driver_name: db.drivers.find(d => d.id === newTx.driverId)?.name || req.body.driver_name || "Juan Pérez",
       vehicle_id: newTx.vehicleId || "VEH-001",
       vehicle_plate: newTx.vehiclePlate || "AB123CD",
-      odometer: odometer || 145230,
-      authorization_method: (authorization_method as any) || "RFID",
+      odometer: bodyOdometer || 145230,
+      authorization_method: (bodyAuthMethod as any) || "RFID",
       authorization_id: req.body.authorization_id || "RFID-000145",
       status: "completed" as const,
       received_at: new Date().toISOString(),

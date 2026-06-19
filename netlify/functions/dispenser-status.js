@@ -186,6 +186,29 @@ exports.handler = async (event, context) => {
       transactionsList = global.latestFuelTransactions || [];
     }
 
+    // Load dynamic drivers and vehicles from KVDB in the background before processing
+    let dynamicDrivers = [];
+    let dynamicVehicles = [];
+    try {
+      const drvRes = await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/registered-drivers");
+      if (drvRes.ok) {
+        const drvData = await drvRes.json();
+        if (Array.isArray(drvData)) dynamicDrivers = drvData;
+      }
+    } catch (e) {
+      console.warn("[C.E.S.T.I.] Failed to load dynamic drivers in Netlify function:", e);
+    }
+
+    try {
+      const vehRes = await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/registered-vehicles");
+      if (vehRes.ok) {
+        const vehData = await vehRes.json();
+        if (Array.isArray(vehData)) dynamicVehicles = vehData;
+      }
+    } catch (e) {
+      console.warn("[C.E.S.T.I.] Failed to load dynamic vehicles in Netlify function:", e);
+    }
+
     // Process completed sales
     activeCompletedSales.forEach(d => {
       const txId = d.last_transaction_id || `TX-AUTO-${d.dispenser_id}-${Math.round(d.last_sale_liters * 100)}-${new Date(received_at).toISOString().split('T')[0]}`;
@@ -205,9 +228,15 @@ exports.handler = async (event, context) => {
       if (!hasTx && !hasDupe) {
         const lookupDriver = (driverVal) => {
           if (!driverVal) return { id: undefined, name: undefined };
-          let val = String(driverVal).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          let rawVal = String(driverVal).trim();
+          let val = rawVal.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+          // Ignore standard empty / empty-equivalent names
+          if (!val || val === "sin asignar" || val === "sin_asignar" || val === "desconocido" || val === "unknown" || val === "sin asociar" || val === "sin_asociar") {
+            return { id: "DRV-AUTO", name: "Sin asignar" };
+          }
           
-          const driversDb = [
+          let driversDb = [
             { id: 'DRV-001', name: 'Juan Pérez', rfid_card: 'RFID-9843-01' },
             { id: 'DRV-002', name: 'Carlos Gómez', rfid_card: 'RFID-1243-02' },
             { id: 'DRV-003', name: 'María Rodríguez', rfid_card: 'RFID-4512-03' },
@@ -218,56 +247,105 @@ exports.handler = async (event, context) => {
             { id: 'DRV-008', name: 'Christian Ledesma', rfid_card: 'RFID-9944-08' }
           ];
 
+          // Prepend dynamic drivers fetched from KVDB
+          if (Array.isArray(dynamicDrivers) && dynamicDrivers.length > 0) {
+            const dynamicIds = new Set(dynamicDrivers.map(drv => drv.id));
+            driversDb = [
+              ...dynamicDrivers.map(drv => ({
+                id: drv.id,
+                name: drv.name,
+                rfid_card: drv.rfidCard || drv.rfid_card || "",
+                document: drv.document || ""
+              })),
+              ...driversDb.filter(drv => !dynamicIds.has(drv.id))
+            ];
+          }
+
+          // 1. First attempt: exact match of ID, Name, Card, Document (case-insensitive and normalized)
+          const exactMatch = driversDb.find(drv => {
+            const dId = drv.id.toLowerCase();
+            const dName = drv.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const dRfid = drv.rfid_card ? drv.rfid_card.toLowerCase().replace(/[^a-z0-9]/g, '') : "";
+            const dDoc = drv.document ? String(drv.document).toLowerCase().replace(/[^a-z0-9]/g, '') : "";
+            const cleanVal = val.replace(/[^a-z0-9]/g, '');
+
+            return dId === val || 
+                   dName === val || 
+                   (dRfid && dRfid === cleanVal) || 
+                   (dDoc && dDoc === cleanVal) ||
+                   (drv.rfid_card && drv.rfid_card.toLowerCase() === val) ||
+                   (drv.document && String(drv.document).toLowerCase() === val);
+          });
+          if (exactMatch) return { id: exactMatch.id, name: exactMatch.name };
+
+          // 2. Second attempt: partial fuzzy match on components of the full name
+          const partialNameMatch = driversDb.find(drv => {
+            const dName = drv.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return dName.includes(val) || val.includes(dName);
+          });
+          if (partialNameMatch) return { id: partialNameMatch.id, name: partialNameMatch.name };
+
+          // 3. Static helper rules (guarded to avoid false positives)
           if (val.includes("villagra") || val.includes("federico")) {
-            const found = driversDb.find(d => d.id === 'DRV-004');
+            const found = driversDb.find(drv => drv.id === 'DRV-004');
             if (found) return { id: found.id, name: found.name };
           }
-          if (val.includes("perez") || val.includes("juan")) {
-            const found = driversDb.find(d => d.id === 'DRV-001');
+          if (val.includes("perez") || (val.includes("juan") && !val.includes("gomez"))) {
+            const found = driversDb.find(drv => drv.id === 'DRV-001');
             if (found) return { id: found.id, name: found.name };
           }
           if (val.includes("gomez") || val.includes("carlos")) {
-            const found = driversDb.find(d => d.id === 'DRV-002');
+            const found = driversDb.find(drv => drv.id === 'DRV-002');
             if (found) return { id: found.id, name: found.name };
           }
           if (val.includes("rodriguez") || val.includes("maria")) {
-            const found = driversDb.find(d => d.id === 'DRV-003');
-            if (found) return { id: found.id, name: found.name };
+            if (!val.includes("martin") && !val.includes("melgarejo")) {
+              const found = driversDb.find(drv => drv.id === 'DRV-003');
+              if (found) return { id: found.id, name: found.name };
+            }
           }
           if (val.includes("mercado") || val.includes("leandro")) {
-            const found = driversDb.find(d => d.id === 'DRV-005');
+            const found = driversDb.find(drv => drv.id === 'DRV-005');
             if (found) return { id: found.id, name: found.name };
           }
           if (val.includes("altuna") || val.includes("mariano")) {
-            const found = driversDb.find(d => d.id === 'DRV-006');
+            const found = driversDb.find(drv => drv.id === 'DRV-006');
             if (found) return { id: found.id, name: found.name };
           }
           if (val.includes("ortelli") || val.includes("guillermo")) {
-            const found = driversDb.find(d => d.id === 'DRV-007');
+            const found = driversDb.find(drv => drv.id === 'DRV-007');
             if (found) return { id: found.id, name: found.name };
           }
           if (val.includes("ledesma") || val.includes("christian")) {
-            const found = driversDb.find(d => d.id === 'DRV-008');
+            const found = driversDb.find(drv => drv.id === 'DRV-008');
             if (found) return { id: found.id, name: found.name };
           }
 
-          const found = driversDb.find(drv => {
+          // 4. Ultimate dynamic check of all properties containing of each other
+          const anyMatch = driversDb.find(drv => {
             const mName = drv.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const mId = drv.id.toLowerCase();
             return mId === val || mName === val || mName.includes(val) || val.includes(mName);
           });
-          if (found) return { id: found.id, name: found.name };
+          if (anyMatch) return { id: anyMatch.id, name: anyMatch.name };
+
           return { id: "DRV-AUTO", name: driverVal };
         };
 
         const lookupVehicle = (vehicleVal) => {
           if (!vehicleVal) return { id: undefined, plate: undefined };
-          let val = String(vehicleVal).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          let rawVal = String(vehicleVal).trim();
+          let val = rawVal.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+          // Ignore standard empty / empty-equivalent plate values
+          if (!val || val === "sin-pat" || val === "sin patente" || val === "sin_patente" || val === "unknown" || val === "sin patente o asociar") {
+            return { id: "VEH-AUTO", plate: "SIN-PAT" };
+          }
 
           // Normalize commonly misspelled terms
           val = val.replace('mercedez', 'mercedes').replace('mercede', 'mercedes');
 
-          const vehiclesDb = [
+          let vehiclesDb = [
             { id: 'VEH-001', plate: 'AB-123-CD', brand: 'Toyota', model: 'Hilux 4x4' },
             { id: 'VEH-002', plate: 'AD-892-JJ', brand: 'Ford', model: 'Ranger Raptor' },
             { id: 'VEH-003', plate: 'GEN-01-IND', brand: 'Caterpillar', model: 'CAT-3512' },
@@ -278,7 +356,27 @@ exports.handler = async (event, context) => {
             { id: 'VEH-008', plate: 'AG-912-BB', brand: 'Chevrolet', model: 'S10 CD' }
           ];
 
-          // Direct mapping bypass for known vehicle models/brands or plates
+          // Prepend dynamic vehicles from KVDB
+          if (Array.isArray(dynamicVehicles) && dynamicVehicles.length > 0) {
+            const dynamicIds = new Set(dynamicVehicles.map(veh => veh.id));
+            vehiclesDb = [
+              ...dynamicVehicles,
+              ...vehiclesDb.filter(veh => !dynamicIds.has(veh.id))
+            ];
+          }
+
+          // 1. Try to extract a plate pattern using regex (e.g. AA 123 CD, AA-123-CD, AAA 123, AAA-123)
+          const plateRegex = /[a-z]{2,3}[-\s]?\d{3}[-\s]?[a-z]{0,3}/i;
+          const plateMatchResult = rawVal.match(plateRegex);
+          if (plateMatchResult) {
+            const extractedPlate = plateMatchResult[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const exactPlateMatch = vehiclesDb.find(v => v.plate.toUpperCase().replace(/[^A-Z0-9]/g, '') === extractedPlate);
+            if (exactPlateMatch) {
+              return { id: exactPlateMatch.id, plate: exactPlateMatch.plate };
+            }
+          }
+
+          // 2. Direct mapping bypass for known vehicle models/brands or plates
           if (val.includes("mercedes") || val.includes("actros") || val.includes("510") || val.includes("zz") || val.includes("aa-510-zz") || val.includes("aa510zz")) {
             const found = vehiclesDb.find(v => v.id === 'VEH-005');
             if (found) return { id: found.id, plate: found.plate };
@@ -312,19 +410,32 @@ exports.handler = async (event, context) => {
             if (found) return { id: found.id, plate: found.plate };
           }
 
-          const found = vehiclesDb.find(v => {
+          // 3. Match by ID or exact Plate
+          const foundVeh = vehiclesDb.find(v => {
             const vId = v.id.toLowerCase();
             const vPlateNoDashes = v.plate.toLowerCase().replace(/[^a-z0-9]/g, '');
             const vBrandModel = (v.brand + " " + v.model).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const cleanVal = val.replace(/[^a-z0-9]/g, '');
-            return vId === val || vPlateNoDashes === cleanVal || vBrandModel.includes(val) || val.includes(vBrandModel);
+            return vId === val || vPlateNoDashes === cleanVal || vBrandModel === val;
           });
-          if (found) return { id: found.id, plate: found.plate };
+          if (foundVeh) return { id: foundVeh.id, plate: foundVeh.plate };
+
+          // 4. Fuzzy match brand or model contains
+          const fuzzyVeh = vehiclesDb.find(v => {
+            const vBrandModel = (v.brand + " " + v.model).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return vBrandModel.includes(val) || val.includes(vBrandModel);
+          });
+          if (fuzzyVeh) return { id: fuzzyVeh.id, plate: fuzzyVeh.plate };
+
           return { id: "VEH-AUTO", plate: vehicleVal };
         };
 
-        const resolvedDrv = lookupDriver(d.driver);
-        const resolvedVeh = lookupVehicle(d.plate || d.vehicle);
+        const dDriver = d.driver_id || d.driver || d.driverId || d.rfid || d.operator || "";
+        const dVehicle = d.vehicle_id || d.vehicle || d.vehicleId || d.car || "";
+        const dPlate = d.vehicle_plate || d.plate || d.patente || dVehicle || "";
+
+        const resolvedDrv = lookupDriver(dDriver);
+        const resolvedVeh = lookupVehicle(dPlate || dVehicle);
 
         const autoTx = {
           transaction_id: txId,
