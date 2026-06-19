@@ -22,26 +22,18 @@ interface ProductsProps {
 }
 
 export default function Products({ data }: ProductsProps) {
-  const { products = [], tanks = [], transactions = [] } = data || {};
-
-  // Find current active site name/location and its corresponding ID
-  const activeSiteName = data.activeSiteName || 'Estación Norte';
-  const activeSite = data.sites?.find((s: any) => s.name === activeSiteName || s.id === activeSiteName) || data.sites?.[0];
-  const activeSiteId = activeSite?.id || 'ESTACION-001';
-
-  const filteredTanks = tanks.filter((t: any) => t.siteId === activeSiteId || t.site_id === activeSiteId);
-  const officialProducts = products.filter((p: any) => ['GO2', 'GP', 'NS'].includes(p.id));
+  const { products, tanks, transactions } = data;
 
   const getProductStockSum = (pId: string) => {
-    return filteredTanks
+    return tanks
       .filter((t: any) => t.productId === pId)
-      .reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+      .reduce((sum: number, t: any) => sum + t.currentVolumeLiters, 0);
   };
 
   const getProductCapacitySum = (pId: string) => {
-    return filteredTanks
+    return tanks
       .filter((t: any) => t.productId === pId)
-      .reduce((sum: number, t: any) => sum + (t.capacityLiters || 0), 0);
+      .reduce((sum: number, t: any) => sum + t.capacityLiters, 0);
   };
 
   return (
@@ -51,13 +43,13 @@ export default function Products({ data }: ProductsProps) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
         <div>
           <h1 className="text-xl font-bold text-slate-800 tracking-tight">Catálogo de Productos</h1>
-          <p className="text-xs text-slate-500 font-medium">Mapeo de combustibles líquidos, densidades de referencia, umbrales críticos de seguridad y control tarifario de la sucursal activa.</p>
+          <p className="text-xs text-slate-500">Mapeo de combustibles líquidos, densidades de referencia, umbrales críticos de seguridad y control tarifario.</p>
         </div>
       </div>
 
       {/* Grid displaying product specifications catalog */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="products-cards-grid">
-        {officialProducts.map((p: any) => {
+        {products.map((p: any) => {
           const sumStock = getProductStockSum(p.id);
           const sumCapacity = getProductCapacitySum(p.id);
           const percent = sumCapacity > 0 ? (sumStock / sumCapacity) * 100 : 0;
