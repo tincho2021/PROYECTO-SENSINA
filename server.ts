@@ -1626,10 +1626,26 @@ async function startServer() {
       return res.status(400).json({ error: 'dispensers array is required' });
     }
 
+    const previousStatesMap = new Map();
+    for (const d of dispensers) {
+      if (!d.dispenser_id) continue;
+      const hoseNum = Number(d.nozzle || d.hose_id || d.hose || 1);
+      const dbDisp = db.dispensers.find(disp => disp.id === d.dispenser_id && disp.hose === hoseNum);
+      if (dbDisp) {
+        previousStatesMap.set(`${d.dispenser_id}-${hoseNum}`, {
+          activeDriver: dbDisp.activeDriver,
+          activeVehicle: dbDisp.activeVehicle,
+          activePlate: dbDisp.activePlate,
+          odometerReading: dbDisp.odometerReading
+        });
+      }
+    }
+
     for (const d of dispensers) {
       if (!d.dispenser_id) continue;
 
-      let dbDisp = db.dispensers.find(disp => disp.id === d.dispenser_id && disp.hose === Number(d.nozzle || d.hose_id || d.hose || 1));
+      const hoseNum = Number(d.nozzle || d.hose_id || d.hose || 1);
+      let dbDisp = db.dispensers.find(disp => disp.id === d.dispenser_id && disp.hose === hoseNum);
       
       const isCurrentlyDispensing = d.status === 'dispensing' || d.status === 'fueling';
       const parsedLiters = isCurrentlyDispensing 
@@ -1639,12 +1655,18 @@ async function startServer() {
         ? Number(d.current_sale_amount || d.current_amount || d.last_sale_amount || 0)
         : Number(d.last_sale_amount || 0);
 
+      const prevState = previousStatesMap.get(`${d.dispenser_id}-${hoseNum}`);
+      const previousDriver = prevState?.activeDriver;
+      const previousVehicle = prevState?.activeVehicle;
+      const previousPlate = prevState?.activePlate;
+      const previousOdometer = prevState?.odometerReading;
+
       if (!dbDisp) {
         dbDisp = {
           id: d.dispenser_id,
           siteId: (req as any).device?.siteId || "rosario-01",
           name: `Surtidor ${d.dispenser_id.replace(/[_-]/g, ' ')}`,
-          hose: Number(d.nozzle || d.hose_id || 1),
+          hose: hoseNum,
           productId: d.product_id || "GO2",
           suctionTankId: d.suction_tank_id || undefined,
           status: d.status || 'available',
@@ -1672,9 +1694,36 @@ async function startServer() {
           dbDisp.lastSaleAmount = parsedAmount;
         }
 
-        dbDisp.activeDriver = d.driver ?? dbDisp.activeDriver;
-        dbDisp.activeVehicle = d.vehicle ?? dbDisp.activeVehicle;
-        dbDisp.activePlate = d.plate ?? dbDisp.activePlate;
+        // Manage activeDriver state carefully:
+        if (d.driver && d.driver !== "Sin asignar") {
+          dbDisp.activeDriver = d.driver;
+        } else if (d.driver === "Sin asignar") {
+          if (!isCurrentlyDispensing && Number(d.last_sale_liters || 0) === 0) {
+            dbDisp.activeDriver = "Sin asignar";
+          } else {
+            dbDisp.activeDriver = previousDriver || dbDisp.activeDriver;
+          }
+        } else {
+          dbDisp.activeDriver = d.driver ?? dbDisp.activeDriver;
+        }
+
+        // Manage activeVehicle and plate:
+        if (d.vehicle && d.vehicle !== "Sin asignar") {
+          dbDisp.activeVehicle = d.vehicle;
+        } else if (d.vehicle === "Sin asignar" && !isCurrentlyDispensing && Number(d.last_sale_liters || 0) === 0) {
+          dbDisp.activeVehicle = "Sin asignar";
+        } else {
+          dbDisp.activeVehicle = d.vehicle ?? dbDisp.activeVehicle;
+        }
+
+        if (d.plate && d.plate !== "SIN-PAT" && d.plate !== "Sin asignar") {
+          dbDisp.activePlate = d.plate;
+        } else if ((d.plate === "SIN-PAT" || d.plate === "Sin asignar") && !isCurrentlyDispensing && Number(d.last_sale_liters || 0) === 0) {
+          dbDisp.activePlate = "SIN-PAT";
+        } else {
+          dbDisp.activePlate = d.plate ?? dbDisp.activePlate;
+        }
+
         dbDisp.odometerReading = d.odometer ?? dbDisp.odometerReading;
         dbDisp.authorizationMethod = d.authorization_method ?? dbDisp.authorizationMethod;
         if (d.product_id) dbDisp.productId = d.product_id;
@@ -1688,7 +1737,7 @@ async function startServer() {
         let resolvedProdId = d.product_id || 'GO2';
         if (resolvedProdId === 'GO3' || resolvedProdId === 'premium') {
           resolvedProdId = 'GP';
-        } else if (resolvedProdId === 'nafta') {
+        } else if (resolvedProdId === 'nafta' || resolvedProdId === 'NF' || resolvedProdId === 'NS') {
           resolvedProdId = 'NS';
         } else if (resolvedProdId === 'gasoil') {
           resolvedProdId = 'GO2';
@@ -1717,8 +1766,13 @@ async function startServer() {
         });
 
         if (!hasTx && !hasDupe) {
-          const resolvedDrv = lookupDriver(d.driver);
-          const resolvedVeh = lookupVehicle(d.plate || d.vehicle);
+          const rawDriver = (d.driver && d.driver !== 'Sin asignar') ? d.driver : (previousDriver || d.driver);
+          const rawVehicle = (d.vehicle && d.vehicle !== 'Sin asignar') ? d.vehicle : (previousVehicle || d.vehicle);
+          const rawPlate = (d.plate && d.plate !== 'SIN-PAT' && d.plate !== 'Sin asignar') ? d.plate : (previousPlate || d.plate);
+          const rawOdometer = d.odometer || previousOdometer || 0;
+
+          const resolvedDrv = lookupDriver(rawDriver);
+          const resolvedVeh = lookupVehicle(rawPlate || rawVehicle);
 
           const newTx = {
             id: txId,
@@ -1731,8 +1785,8 @@ async function startServer() {
             pricePerLiter: d.last_sale_amount ? Number((d.last_sale_amount / d.last_sale_liters).toFixed(2)) : 1200,
             driverId: resolvedDrv.id,
             vehicleId: resolvedVeh.id,
-            vehiclePlate: resolvedVeh.plate || d.plate || "SIN-PAT",
-            odometer: d.odometer || 0,
+            vehiclePlate: resolvedVeh.plate || rawPlate || "SIN-PAT",
+            odometer: rawOdometer,
             timestampStart: new Date(Date.now() - 3 * 60000).toISOString(),
             timestampEnd: new Date().toISOString(),
             authorizationMethod: d.authorization_method || 'RFID',

@@ -105,6 +105,18 @@ exports.handler = async (event, context) => {
     }
   }
 
+  let previousDispData = global.latestDispenserStatusData;
+  if (!previousDispData) {
+    try {
+      const pRes = await fetch("https://kvdb.io/7b3mwrCjYKfthbbugjqh4k/latest-dispenser-status");
+      if (pRes.ok) {
+        previousDispData = await pRes.json();
+      }
+    } catch (e) {
+      console.warn("[C.E.S.T.I.] Failed to fetch previous dispenser status in Netlify function:", e.message);
+    }
+  }
+
   const received_at = new Date().toISOString();
   const dispenserStatusRecord = {
     device_id: payload.device_id || "CTRL-SURT-0001",
@@ -114,7 +126,7 @@ exports.handler = async (event, context) => {
       let resolvedProdId = d.product_id || 'GO2';
       if (resolvedProdId === 'GO3' || resolvedProdId === 'premium') {
         resolvedProdId = 'GP';
-      } else if (resolvedProdId === 'nafta') {
+      } else if (resolvedProdId === 'nafta' || resolvedProdId === 'NF' || resolvedProdId === 'NS') {
         resolvedProdId = 'NS';
       } else if (resolvedProdId === 'gasoil') {
         resolvedProdId = 'GO2';
@@ -126,10 +138,36 @@ exports.handler = async (event, context) => {
           resolvedProdId = 'NS';
         }
       }
+
+      const nozzleNum = Number(d.nozzle || d.hose_id || 1);
+      const prevDisp = previousDispData && Array.isArray(previousDispData.dispensers)
+        ? previousDispData.dispensers.find(p => p.dispenser_id === d.dispenser_id && (p.nozzle === nozzleNum || p.hose_id === d.hose_id))
+        : null;
+
+      const isCurrentlyDispensing = d.status === 'dispensing' || d.status === 'fueling';
+      
+      // Manage driver fallback to avoid loosing card credentials on completion
+      let rawDriver = d.driver;
+      if (d.driver === "Sin asignar") {
+        if (isCurrentlyDispensing || Number(d.last_sale_liters || 0) > 0) {
+          rawDriver = prevDisp ? prevDisp.driver : d.driver;
+        }
+      }
+
+      let rawVehicle = d.vehicle;
+      if (d.vehicle === "Sin asignar" && (isCurrentlyDispensing || Number(d.last_sale_liters || 0) > 0)) {
+        rawVehicle = prevDisp ? prevDisp.vehicle : d.vehicle;
+      }
+
+      let rawPlate = d.plate;
+      if ((d.plate === "SIN-PAT" || d.plate === "Sin asignar") && (isCurrentlyDispensing || Number(d.last_sale_liters || 0) > 0)) {
+        rawPlate = prevDisp ? prevDisp.plate : d.plate;
+      }
+
       return {
         dispenser_id: d.dispenser_id,
         hose_id: d.hose_id || d.nozzle || "M01",
-        nozzle: Number(d.nozzle || d.hose_id || 1),
+        nozzle: nozzleNum,
         product: d.product || (resolvedProdId === 'GP' ? 'Gasoil Grado 3' : resolvedProdId === 'NS' ? 'Nafta Súper' : 'Gasoil Grado 2'),
         product_id: resolvedProdId,
         suction_tank_id: d.suction_tank_id || undefined,
@@ -137,10 +175,10 @@ exports.handler = async (event, context) => {
         last_transaction_id: d.last_transaction_id || null,
         last_sale_liters: Number(d.last_sale_liters || d.lastSaleLiters || 0),
         last_sale_amount: Number(d.last_sale_amount || d.lastSaleAmount || 0),
-        driver: d.driver || undefined,
-        vehicle: d.vehicle || undefined,
-        plate: d.plate || undefined,
-        odometer: d.odometer || undefined,
+        driver: rawDriver || undefined,
+        vehicle: rawVehicle || undefined,
+        plate: rawPlate || undefined,
+        odometer: d.odometer || (prevDisp ? prevDisp.odometer : undefined),
         authorization_method: d.authorization_method || "RFID"
       };
     }),
@@ -430,9 +468,14 @@ exports.handler = async (event, context) => {
           return { id: "VEH-AUTO", plate: vehicleVal };
         };
 
-        const dDriver = d.driver_id || d.driver || d.driverId || d.rfid || d.operator || "";
-        const dVehicle = d.vehicle_id || d.vehicle || d.vehicleId || d.car || "";
-        const dPlate = d.vehicle_plate || d.plate || d.patente || dVehicle || "";
+        const prevDisp = previousDispData && Array.isArray(previousDispData.dispensers)
+          ? previousDispData.dispensers.find(p => p.dispenser_id === d.dispenser_id && p.nozzle === d.nozzle)
+          : null;
+
+        const dDriver = (d.driver && d.driver !== "Sin asignar") ? d.driver : (prevDisp ? prevDisp.driver : d.driver) || "";
+        const dVehicle = (d.vehicle && d.vehicle !== "Sin asignar") ? d.vehicle : (prevDisp ? prevDisp.vehicle : d.vehicle) || "";
+        const dPlate = (d.plate && d.plate !== "SIN-PAT" && d.plate !== "Sin asignar") ? d.plate : (prevDisp ? prevDisp.plate : d.plate) || "";
+        const dOdometer = d.odometer || (prevDisp ? prevDisp.odometer : 0) || 0;
 
         const resolvedDrv = lookupDriver(dDriver);
         const resolvedVeh = lookupVehicle(dPlate || dVehicle);
@@ -452,10 +495,10 @@ exports.handler = async (event, context) => {
           amount: d.last_sale_amount || (d.last_sale_liters * 1200),
           price_per_liter: d.last_sale_amount ? Number((d.last_sale_amount / d.last_sale_liters).toFixed(2)) : 1200,
           driver_id: resolvedDrv.id,
-          driver_name: resolvedDrv.name || d.driver || "C.E.S.T.I. Chofer",
+          driver_name: resolvedDrv.name || dDriver || "C.E.S.T.I. Chofer",
           vehicle_id: resolvedVeh.id,
-          vehicle_plate: resolvedVeh.plate || d.plate || "SIN-PAT",
-          odometer: d.odometer || 0,
+          vehicle_plate: resolvedVeh.plate || dPlate || "SIN-PAT",
+          odometer: dOdometer,
           authorization_method: d.authorization_method || "RFID",
           status: "completed",
           received_at,
