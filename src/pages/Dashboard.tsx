@@ -309,30 +309,32 @@ export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProp
 
   // Stock history timeline of the last 15 days
   const dynamicHistoricalData = mockHistoricalStockData.map((item: any, idx: number) => {
-    if (hasHistory && tanks.length > 0) {
-      // Simulation/demo mode is active: Use predefined mock trend curves
-      return {
-        name: item.name,
-        [`${g2Name} (L)`]: item["Gasoil G2 (L)"],
-        [`${g3Name} (L)`]: item["Gasoil G3 (L)"],
-        [`${nsName} (L)`]: item["Nafta Súper (L)"]
-      };
-    } else {
-      // Clean start/wiped mode - There are no prior records.
-      // Set previous days to 0 and show the current tank volume on the final day (today)
-      const isToday = idx === 14;
-      
-      const g2Vol = tanks.filter((t: any) => t.productId === 'GO2').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
-      const g3Vol = tanks.filter((t: any) => t.productId === 'GP').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
-      const nsVol = tanks.filter((t: any) => t.productId === 'NS').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+    // Find current live volumes for each fuel type
+    const g2Vol = tanks.filter((t: any) => t.productId === 'GO2' || t.product_id === 'GO2').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+    const g3Vol = tanks.filter((t: any) => t.productId === 'GP' || t.productId === 'premium' || t.productId === 'GO3' || t.product_id === 'GP' || t.product_id === 'premium' || t.product_id === 'GO3').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+    const nsVol = tanks.filter((t: any) => t.productId === 'NS' || t.productId === 'NF' || t.productId === 'nafta' || t.product_id === 'NS' || t.product_id === 'NF' || t.product_id === 'nafta').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
 
-      return {
-        name: item.name,
-        [`${g2Name} (L)`]: isToday ? g2Vol : 0,
-        [`${g3Name} (L)`]: isToday ? g3Vol : 0,
-        [`${nsName} (L)`]: isToday ? nsVol : 0
-      };
-    }
+    // Check if any active tanks exist for each fuel type
+    const hasG2Active = tanks.some((t: any) => t.productId === 'GO2' || t.product_id === 'GO2');
+    const hasG3Active = tanks.some((t: any) => t.productId === 'GP' || t.productId === 'premium' || t.productId === 'GO3' || t.product_id === 'GP' || t.product_id === 'premium' || t.product_id === 'GO3');
+    const hasNSActive = tanks.some((t: any) => t.productId === 'NS' || t.productId === 'NF' || t.productId === 'nafta' || t.product_id === 'NS' || t.product_id === 'NF' || t.product_id === 'nafta');
+
+    // Today reference mock values to calculate scaling factor
+    const todayG2Mock = mockHistoricalStockData[14]["Gasoil G2 (L)"] || 1;
+    const todayG3Mock = mockHistoricalStockData[14]["Gasoil G3 (L)"] || 1;
+    const todayNSMock = mockHistoricalStockData[14]["Nafta Súper (L)"] || 1;
+
+    // Scale the historical trend series if active, otherwise set strictly to 0
+    const g2Val = hasG2Active ? Math.round((item["Gasoil G2 (L)"] / todayG2Mock) * g2Vol) : 0;
+    const g3Val = hasG3Active ? Math.round((item["Gasoil G3 (L)"] / todayG3Mock) * g3Vol) : 0;
+    const nsVal = hasNSActive ? Math.round((item["Nafta Súper (L)"] / todayNSMock) * nsVol) : 0;
+
+    return {
+      name: item.name,
+      [`${g2Name} (L)`]: g2Val,
+      [`${g3Name} (L)`]: g3Val,
+      [`${nsName} (L)`]: nsVal
+    };
   });
 
   // Daily consumption per branch timeline matching the last 14 days
