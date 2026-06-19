@@ -293,141 +293,219 @@ interface DashboardProps {
 export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProps) {
   const { tanks = [], dispensers = [], transactions = [], alerts = [], products = [] } = data || {};
 
+  // Find current active site name/location and its corresponding ID
+  const activeSiteName = data.activeSiteName || 'Estación Norte';
+  const activeSite = data.sites?.find((s: any) => s.name === activeSiteName || s.id === activeSiteName) || data.sites?.[0];
+  const activeSiteId = activeSite?.id || 'ESTACION-001';
+
+  // Strict Site Isolation: Filter all arrays to only include records for the selected site
+  const filteredTanks = tanks.filter((t: any) => t.siteId === activeSiteId || t.site_id === activeSiteId);
+  const filteredDispensers = dispensers.filter((d: any) => d.siteId === activeSiteId || d.site_id === activeSiteId);
+  const filteredTransactions = transactions.filter((tx: any) => tx.siteId === activeSiteId || tx.site_id === activeSiteId);
+  const filteredAlerts = alerts.filter((a: any) => a.siteId === activeSiteId || a.site_id === activeSiteId || !a.siteId);
+
   // Get dynamic names of products based on registered IDs, falling back to default labels
   const g2Name = products.find((p: any) => p.id === 'GO2')?.name?.split(' (')[0] || 'Gasoil G2';
   const g3Name = products.find((p: any) => p.id === 'GP')?.name?.split(' (')[0] || 'Gasoil G3';
   const nsName = products.find((p: any) => p.id === 'NS')?.name?.split(' (')[0] || 'Nafta Súper';
 
-  // Check if there are any completed transactions from preceding days. 
-  // If not, it means the database has been wiped clean / reset to start fresh of today (15/6)
-  const hasHistory = transactions.length > 0 && transactions.some((tx: any) => {
-    const txDate = new Date(tx.createdAt || tx.timestampStart);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return txDate < today;
+  // Building the clean, 100% real historical telemetry dataset of the last 15 days
+  const last15Days = Array.from({ length: 15 }).map((_, idx) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (14 - idx));
+    d.setHours(0, 0, 0, 0);
+    return d;
   });
 
-  // Stock history timeline of the last 15 days
-  const dynamicHistoricalData = mockHistoricalStockData.map((item: any, idx: number) => {
-    // Find current live volumes for each fuel type
-    const g2Vol = tanks.filter((t: any) => t.productId === 'GO2' || t.product_id === 'GO2').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
-    const g3Vol = tanks.filter((t: any) => t.productId === 'GP' || t.productId === 'premium' || t.productId === 'GO3' || t.product_id === 'GP' || t.product_id === 'premium' || t.product_id === 'GO3').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
-    const nsVol = tanks.filter((t: any) => t.productId === 'NS' || t.productId === 'NF' || t.productId === 'nafta' || t.product_id === 'NS' || t.product_id === 'NF' || t.product_id === 'nafta').reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+  const dynamicHistoricalData = last15Days.map(dayDate => {
+    const dayStr = `${dayDate.getDate()}/${dayDate.getMonth() + 1}`;
+    
+    // Period for this day: from dayDate 00:00:00 to 23:59:59
+    const startOfTargetDay = new Date(dayDate);
+    const endOfTargetDay = new Date(dayDate);
+    endOfTargetDay.setHours(23, 59, 59, 999);
 
-    // Check if any active tanks exist for each fuel type
-    const hasG2Active = tanks.some((t: any) => t.productId === 'GO2' || t.product_id === 'GO2');
-    const hasG3Active = tanks.some((t: any) => t.productId === 'GP' || t.productId === 'premium' || t.productId === 'GO3' || t.product_id === 'GP' || t.product_id === 'premium' || t.product_id === 'GO3');
-    const hasNSActive = tanks.some((t: any) => t.productId === 'NS' || t.productId === 'NF' || t.productId === 'nafta' || t.product_id === 'NS' || t.product_id === 'NF' || t.product_id === 'nafta');
+    // Find all telemetry records belonging to this 24-hour day and the active site
+    const dayPayloads = (data.esp32RawLogs || [])
+      .map((log: any) => log.payload || log)
+      .filter((tel: any) => {
+        if (!tel) return false;
+        
+        // Match Site ID (normalize names/ids)
+        const tSiteId = tel.site_id || tel.siteId || 'ESTACION-001';
+        let matchSite = false;
+        if (tSiteId === activeSiteId) {
+          matchSite = true;
+        } else if (String(tSiteId).toLowerCase().includes('martelli') && activeSiteId === 'ESTACION-001') {
+          // Rosario auto-registered alias VILLA MARTELLI / Estación Norte
+          matchSite = true;
+        } else if (String(tSiteId).toLowerCase().includes('norte') && activeSiteId === 'ESTACION-001') {
+          matchSite = true;
+        } else if (String(tSiteId).toLowerCase().includes('sur') && activeSiteId === 'ESTACION-002') {
+          matchSite = true;
+        } else if (String(tSiteId).toLowerCase().includes('oeste') && activeSiteId === 'ESTACION-003') {
+          matchSite = true;
+        }
+        if (!matchSite) return false;
 
-    // Today reference mock values to calculate scaling factor
-    const todayG2Mock = mockHistoricalStockData[14]["Gasoil G2 (L)"] || 1;
-    const todayG3Mock = mockHistoricalStockData[14]["Gasoil G3 (L)"] || 1;
-    const todayNSMock = mockHistoricalStockData[14]["Nafta Súper (L)"] || 1;
+        const tDate = tel.timestamp || tel.received_at || tel.received_time || tel.createdAt;
+        if (!tDate) return false;
+        const parsedDate = new Date(tDate);
+        return parsedDate >= startOfTargetDay && parsedDate <= endOfTargetDay;
+      });
 
-    // Scale the historical trend series if active, otherwise set strictly to 0
-    const g2Val = hasG2Active ? Math.round((item["Gasoil G2 (L)"] / todayG2Mock) * g2Vol) : 0;
-    const g3Val = hasG3Active ? Math.round((item["Gasoil G3 (L)"] / todayG3Mock) * g3Vol) : 0;
-    const nsVal = hasNSActive ? Math.round((item["Nafta Súper (L)"] / todayNSMock) * nsVol) : 0;
+    // In this site, find its latest telemetry on this day
+    const siteTanks = filteredTanks;
+    
+    let g2Sum: number | null = null;
+    let g3Sum: number | null = null;
+    let nsSum: number | null = null;
+
+    siteTanks.forEach((tank: any) => {
+      // Find the latest telemetry on this day for this specific tank
+      const tankTelemetryOnDay = dayPayloads
+        .filter((tel: any) => {
+          const incomingId = tel.tank_id || tel.id;
+          let targetId = incomingId;
+          if (incomingId === 'tank_01' || incomingId === 'tank_1') {
+            targetId = 'TQ-02';
+          } else if (incomingId === 'tank_02' || incomingId === 'tank_2') {
+            targetId = 'TQ-01';
+          } else if (incomingId === 'tank_03' || incomingId === 'tank_3') {
+            targetId = 'TQ-03';
+          }
+          return targetId === tank.id;
+        })
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.timestamp || a.received_at || a.received_time || 0).getTime();
+          const dateB = new Date(b.timestamp || b.received_at || b.received_time || 0).getTime();
+          return dateB - dateA; // descending, latest first
+        });
+
+      if (tankTelemetryOnDay.length > 0) {
+        const latestOnDay = tankTelemetryOnDay[0];
+        const liters = Number(latestOnDay.volume_liters ?? latestOnDay.currentVolumeLiters ?? 0);
+        
+        // Resolve product
+        let pId = latestOnDay.product_id;
+        if (!pId) pId = tank.productId;
+        if (pId === 'GO3' || pId === 'premium') pId = 'GP';
+        else if (pId === 'nafta' || pId === 'NF') pId = 'NS';
+        else if (pId === 'gasoil') pId = 'GO2';
+
+        if (pId === 'GO2') {
+          g2Sum = (g2Sum ?? 0) + liters;
+        } else if (pId === 'GP') {
+          g3Sum = (g3Sum ?? 0) + liters;
+        } else if (pId === 'NS') {
+          nsSum = (nsSum ?? 0) + liters;
+        }
+      }
+    });
 
     return {
-      name: item.name,
-      [`${g2Name} (L)`]: g2Val,
-      [`${g3Name} (L)`]: g3Val,
-      [`${nsName} (L)`]: nsVal
+      name: dayStr,
+      [`${g2Name} (L)`]: g2Sum,
+      [`${g3Name} (L)`]: g3Sum,
+      [`${nsName} (L)`]: nsSum
     };
   });
 
-  // Daily consumption per branch timeline matching the last 14 days
-  const dynamicDailyConsumptionData = mockDailyConsumptionData.map((item: any, idx: number) => {
-    if (hasHistory) {
-      // Simulation/demo mode is active: Use predefined mock consumption
-      return item;
-    } else {
-      // Clean start/wiped mode - Set previous days to 0.
-      // Calculate today's real volume dispensed from live transactions.
-      const isToday = idx === mockDailyConsumptionData.length - 1;
-      
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
+  const hasRealHistoricalData = dynamicHistoricalData.some(item => 
+    item[`${g2Name} (L)`] !== null || 
+    item[`${g3Name} (L)`] !== null || 
+    item[`${nsName} (L)`] !== null
+  );
 
-      const getSumForSite = (siteKeys: string[]) => {
-        return transactions
-          .filter((tx: any) => {
-            const isCompleted = tx.status === 'completed';
-            const txDate = new Date(tx.createdAt || tx.timestampStart);
-            const isTodayTx = txDate >= todayStart;
-            // Map sites dynamically
-            const siteNameMatch = siteKeys.some(k => 
-              (tx.siteId && String(tx.siteId).toLowerCase().includes(k.toLowerCase())) ||
-              (tx.siteName && String(tx.siteName).toLowerCase().includes(k.toLowerCase())) ||
-              (tx.dispenserId && String(tx.dispenserId).toLowerCase().includes(k.toLowerCase()))
-            );
-            return isCompleted && isTodayTx && siteNameMatch;
-          })
-          .reduce((sum: number, tx: any) => sum + (tx.liters || 0), 0);
-      };
-
-      // If there are transactions today but without specific site, default them to Rosario (main branch)
-      const unfilteredToday = transactions
-        .filter((tx: any) => tx.status === 'completed' && new Date(tx.createdAt || tx.timestampStart) >= todayStart)
-        .reduce((sum: number, tx: any) => sum + (tx.liters || 0), 0);
-
-      let rosarioLiters = getSumForSite(['rosario', 'norte', 'ESTACION-001', 'surt', 'ctrl']);
-      if (rosarioLiters === 0 && unfilteredToday > 0) {
-        rosarioLiters = unfilteredToday;
-      }
-
-      const bahiaLiters = getSumForSite(['bahía', 'bahia', 'sur', 'ESTACION-002']);
-      const lujanLiters = getSumForSite(['luján', 'lujan', 'oeste', 'ESTACION-003']);
-
-      return {
-        name: item.name,
-        Rosario: isToday ? rosarioLiters : 0,
-        "Bahía Blanca": isToday ? bahiaLiters : 0,
-        Luján: isToday ? lujanLiters : 0
-      };
-    }
+  // Daily consumption per branch timeline matching the last 14 days, computed strictly from real transactions
+  const last14DaysForCons = Array.from({ length: 14 }).map((_, idx) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (13 - idx));
+    d.setHours(0, 0, 0, 0);
+    return d;
   });
 
-  // 1. KPI Calculations
-  const totalLitersAvailable = tanks.reduce((sum: number, t: any) => sum + t.currentVolumeLiters, 0);
-  const totalCapacity = tanks.reduce((sum: number, t: any) => sum + t.capacityLiters, 0);
+  const dynamicDailyConsumptionData = last14DaysForCons.map(dayDate => {
+    const dayStr = `${dayDate.getDate()}/${dayDate.getMonth() + 1}`;
+    
+    const startOfTargetDay = new Date(dayDate);
+    const endOfTargetDay = new Date(dayDate);
+    endOfTargetDay.setHours(23, 59, 59, 999);
+
+    const getSumForSite = (siteKeys: string[]) => {
+      return transactions
+        .filter((tx: any) => {
+          if (tx.status !== 'completed' && tx.status !== 'success') return false;
+          
+          const txDate = new Date(tx.createdAt || tx.timestampStart || tx.timestampEnd);
+          const isOnDay = txDate >= startOfTargetDay && txDate <= endOfTargetDay;
+          if (!isOnDay) return false;
+
+          const siteMatch = siteKeys.some(k => 
+            (tx.siteId && String(tx.siteId).toLowerCase().includes(k.toLowerCase())) ||
+            (tx.siteName && String(tx.siteName).toLowerCase().includes(k.toLowerCase())) ||
+            (tx.dispenserId && String(tx.dispenserId).toLowerCase().includes(k.toLowerCase()))
+          );
+          return siteMatch;
+        })
+        .reduce((sum: number, tx: any) => sum + (Number(tx.liters) || 0), 0);
+    };
+
+    const rosarioLiters = getSumForSite(['rosario', 'norte', 'ESTACION-001']);
+    const bahiaLiters = getSumForSite(['bahía', 'bahia', 'sur', 'ESTACION-002']);
+    const lujanLiters = getSumForSite(['luján', 'lujan', 'oeste', 'ESTACION-003']);
+
+    return {
+      name: dayStr,
+      Rosario: rosarioLiters,
+      "Bahía Blanca": bahiaLiters,
+      Luján: lujanLiters
+    };
+  });
+
+  const hasRealConsumption = dynamicDailyConsumptionData.some(item => 
+    (item.Rosario + item["Bahía Blanca"] + item.Luján) > 0
+  );
+
+  // 1. KPI Calculations (Filtered by Active Site)
+  const totalLitersAvailable = filteredTanks.reduce((sum: number, t: any) => sum + (t.currentVolumeLiters || 0), 0);
+  const totalCapacity = filteredTanks.reduce((sum: number, t: any) => sum + (t.capacityLiters || 0), 0);
   
   // Liters value: Multiply current tank stock * product price
-  const totalValue = tanks.reduce((sum: number, t: any) => {
+  const totalValue = filteredTanks.reduce((sum: number, t: any) => {
     const prod = products.find((p: any) => p.id === t.productId);
     const price = prod ? prod.pricePerLiter : 1200;
-    return sum + t.currentVolumeLiters * price;
+    return sum + (t.currentVolumeLiters || 0) * price;
   }, 0);
 
   // Today's total dispensed liters
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const dispensedToday = transactions
-    .filter((tx: any) => tx.status === 'completed' && new Date(tx.createdAt) >= todayStart)
-    .reduce((sum: number, tx: any) => sum + tx.liters, 0);
+  const dispensedToday = filteredTransactions
+    .filter((tx: any) => (tx.status === 'completed' || tx.status === 'success') && new Date(tx.createdAt || tx.timestampStart) >= todayStart)
+    .reduce((sum: number, tx: any) => sum + (Number(tx.liters) || 0), 0);
 
   // Month-to-date dispensed liters
   const firstOfMonth = new Date();
   firstOfMonth.setDate(1);
   firstOfMonth.setHours(0,0,0,0);
-  const dispensedMonth = transactions
-    .filter((tx: any) => tx.status === 'completed' && new Date(tx.createdAt) >= firstOfMonth)
-    .reduce((sum: number, tx: any) => sum + tx.liters, 0);
+  const dispensedMonth = filteredTransactions
+    .filter((tx: any) => (tx.status === 'completed' || tx.status === 'success') && new Date(tx.createdAt || tx.timestampStart) >= firstOfMonth)
+    .reduce((sum: number, tx: any) => sum + (Number(tx.liters) || 0), 0);
 
-  const activeAlerts = alerts.filter((a: any) => a.status === 'new');
+  const activeAlerts = filteredAlerts.filter((a: any) => a.status === 'new');
   const criticalAlertsCount = activeAlerts.filter((a: any) => a.level === 'critical').length;
   
-  const connectedSensorsCount = tanks.filter((t: any) => t.sensorStatus !== 'no_comm').length;
-  const activeDispensersCount = dispensers.filter((d: any) => d.status === 'dispensing' || d.status === 'calling').length;
+  const connectedSensorsCount = filteredTanks.filter((t: any) => t.sensorStatus !== 'no_comm').length;
+  const activeDispensersCount = filteredDispensers.filter((d: any) => d.status === 'dispensing' || d.status === 'calling' || d.status === 'fueling').length;
 
   // Estimate general autonomy (Liters / typical rate across sites)
   const averageDailyRate = Math.max(100, Math.round(dispensedMonth / Math.max(1, new Date().getDate())));
   const averageAutonomyDays = Math.round((totalLitersAvailable / (averageDailyRate || 1350)) * 10) / 10;
 
-  // 2. Prepare Stock by Product distribution for Donut Chart
+  // 2. Prepare Stock by Product distribution for Donut Chart (Filtered by active site)
   const productStockMap: { [key: string]: { name: string; value: number; color: string } } = {};
-  tanks.forEach((t: any) => {
+  filteredTanks.forEach((t: any) => {
     const prod = products.find((p: any) => p.id === t.productId);
     if (prod) {
       if (!productStockMap[prod.id]) {
@@ -437,7 +515,7 @@ export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProp
           color: prod.hexColor
         };
       }
-      productStockMap[prod.id].value += t.currentVolumeLiters;
+      productStockMap[prod.id].value += (t.currentVolumeLiters || 0);
     }
   });
   const stockByProductData = Object.values(productStockMap);
@@ -563,28 +641,34 @@ export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProp
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded" style={{ backgroundColor: products.find((p: any) => p.id === 'NS')?.hexColor || '#3b82f6' }} /> {nsName}</span>
             </div>
           </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dynamicHistoricalData}>
-                <defs>
-                  <linearGradient id="colorG2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={products.find((p: any) => p.id === 'GO2')?.hexColor || '#0d9488'} stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor={products.find((p: any) => p.id === 'GO2')?.hexColor || '#0d9488'} stopOpacity={0.0}/>
-                  </linearGradient>
-                  <linearGradient id="colorG3" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={products.find((p: any) => p.id === 'GP')?.hexColor || '#0f766e'} stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor={products.find((p: any) => p.id === 'GP')?.hexColor || '#0f766e'} stopOpacity={0.0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eff4f6" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '11px' }} />
-                <Area type="monotone" dataKey={`${g2Name} (L)`} stroke={products.find((p: any) => p.id === 'GO2')?.hexColor || '#0d9488'} fillOpacity={1} fill="url(#colorG2)" strokeWidth={2.5} />
-                <Area type="monotone" dataKey={`${g3Name} (L)`} stroke={products.find((p: any) => p.id === 'GP')?.hexColor || '#0f766e'} fillOpacity={1} fill="url(#colorG3)" strokeWidth={2.5} />
-                <Area type="monotone" dataKey={`${nsName} (L)`} stroke={products.find((p: any) => p.id === 'NS')?.hexColor || '#3b82f6'} fillOpacity={0} strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="h-72 flex flex-col justify-center">
+            {hasRealHistoricalData ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={dynamicHistoricalData}>
+                  <defs>
+                    <linearGradient id="colorG2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={products.find((p: any) => p.id === 'GO2')?.hexColor || '#0d9488'} stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor={products.find((p: any) => p.id === 'GO2')?.hexColor || '#0d9488'} stopOpacity={0.0}/>
+                    </linearGradient>
+                    <linearGradient id="colorG3" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={products.find((p: any) => p.id === 'GP')?.hexColor || '#0f766e'} stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor={products.find((p: any) => p.id === 'GP')?.hexColor || '#0f766e'} stopOpacity={0.0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eff4f6" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '11px' }} />
+                  <Area type="monotone" dataKey={`${g2Name} (L)`} stroke={products.find((p: any) => p.id === 'GO2')?.hexColor || '#0d9488'} fillOpacity={1} fill="url(#colorG2)" strokeWidth={2.5} />
+                  <Area type="monotone" dataKey={`${g3Name} (L)`} stroke={products.find((p: any) => p.id === 'GP')?.hexColor || '#0f766e'} fillOpacity={1} fill="url(#colorG3)" strokeWidth={2.5} />
+                  <Area type="monotone" dataKey={`${nsName} (L)`} stroke={products.find((p: any) => p.id === 'NS')?.hexColor || '#3b82f6'} fillOpacity={0} strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 py-12 italic text-xs">
+                Sin datos registrados para el período seleccionado
+              </div>
+            )}
           </div>
         </div>
 
@@ -679,19 +763,25 @@ export default function Dashboard({ data, onRefresh, onNavigate }: DashboardProp
             <h3 className="text-xs font-bold text-slate-400 tracking-widest uppercase">Consumo de Flota Diario por Sucursal (L)</h3>
             <p className="text-[11px] text-slate-500 font-medium">Despachos volumétricos registrados diario en Rosario, Bahía Blanca y Luján.</p>
           </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dynamicDailyConsumptionData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eff4f6" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '12px' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                <Bar dataKey="Rosario" fill="#0d9488" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Bahía Blanca" fill="#0f766e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Luján" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="h-64 flex flex-col justify-center">
+            {hasRealConsumption ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dynamicDailyConsumptionData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eff4f6" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '12px' }} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <Bar dataKey="Rosario" fill="#0d9488" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Bahía Blanca" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Luján" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 py-12 italic text-xs">
+                Sin consumos registrados para el período
+              </div>
+            )}
           </div>
         </div>
 

@@ -29,7 +29,7 @@ import {
 // In-Memory Database State
 const db = {
   sites: [...mockSites],
-  products: [...mockProducts],
+  products: [...mockProducts].filter(p => p.id !== 'NF'),
   tanks: [...mockTanks],
   dispensers: [...mockDispensers],
   drivers: [...mockDrivers],
@@ -249,7 +249,7 @@ async function startServer() {
 
               let pId = kvTank.product_id;
               if (pId === 'GO3' || pId === 'premium') pId = 'GP';
-              else if (pId === 'nafta') pId = 'NS';
+              else if (pId === 'nafta' || pId === 'NF') pId = 'NS';
               else if (pId === 'gasoil') pId = 'GO2';
 
               let localTank = db.tanks.find(t => t.id === targetId);
@@ -315,7 +315,7 @@ async function startServer() {
           const prodData = await res.json();
           if (Array.isArray(prodData)) {
             prodData.forEach((kvProd: any) => {
-              if (!kvProd.id) return;
+              if (!kvProd.id || kvProd.id === 'NF') return;
               let localProd = db.products.find(p => p.id === kvProd.id);
               if (localProd) {
                 localProd.name = kvProd.name ?? localProd.name;
@@ -341,6 +341,8 @@ async function startServer() {
                 } as any);
               }
             });
+            // Ensure no NF gets into db.products
+            db.products = db.products.filter(p => p.id !== 'NF');
           }
         }
       } catch (e: any) {
@@ -1156,7 +1158,7 @@ async function startServer() {
       }
     } else if (resolvedProductId === 'GO3' || resolvedProductId === 'premium') {
       resolvedProductId = 'GP';
-    } else if (resolvedProductId === 'nafta') {
+    } else if (resolvedProductId === 'nafta' || resolvedProductId === 'NF') {
       resolvedProductId = 'NS';
     } else if (resolvedProductId === 'gasoil') {
       resolvedProductId = 'GO2';

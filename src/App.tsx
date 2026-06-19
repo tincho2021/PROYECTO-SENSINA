@@ -327,7 +327,7 @@ export default function App() {
                   }
                 } else if (pId === "GO3" || pId === "premium") {
                   pId = "GP";
-                } else if (pId === "nafta") {
+                } else if (pId === "nafta" || pId === "NF") {
                   pId = "NS";
                 } else if (pId === "gasoil") {
                   pId = "GO2";
